@@ -360,14 +360,7 @@ def load_default_calib_data() -> dict[str, MyRegion]:
                                                     "text": "The area above the radar where the supercruise overdrive active message appears.",
                                                     "readonly": False},
         "Screen_Regions.full_panel.subregion.fss": {"rect": [0.5045, 0.7545, 0.532, 0.7955],
-                                                    "text": "ELW detection strip on the FSS spectral analysis bar.\n"
-                                                            "1. Stop the ship (0% throttle) and open the FSS.\n"
-                                                            "2. Adjust Left/Right so the rect spans exactly from the LEFT edge\n"
-                                                            "   of the WATER WORLDS zone to the RIGHT edge of the AMMONIA WORLDS\n"
-                                                            "   zone (Earth-likes in the middle). Zone detection divides this\n"
-                                                            "   strip into equal thirds: Water | Earth-like | Ammonia.\n"
-                                                            "3. Adjust Top/Bottom tight around the waveform: bottom on the\n"
-                                                            "   baseline, top just above the tallest signal peaks.",
+                                                    "text": "DEPRECATED - the ELW scanner now uses EDFSS.full_panel.subregion.elw_zones.",
                                                     "readonly": False},
         "Screen_Regions.full_panel.subregion.mission_dest": {"rect": [0.46, 0.38, 0.65, 0.86],
                                                              "text": "TBD.",
@@ -463,6 +456,18 @@ def load_default_calib_data() -> dict[str, MyRegion]:
         "EDFSS.full_panel.subregion.analysis": {
             "rect": [0.0, 0.0, 0.15, 0.075],
             "text": "Select the analysis display.",
+            "readonly": False},
+        "EDFSS.full_panel.subregion.elw_zones": {
+            "rect": [0.477, 0.761, 0.549, 0.841],
+            "text": "ELW detection segment of the spectral analysis bar.\n"
+                    "1. Stop the ship (0% throttle) and open the FSS.\n"
+                    "2. Move the FSS tuning cursor to find the zone boundaries: the rect\n"
+                    "   must span exactly from the LEFT edge of the WATER WORLDS zone to\n"
+                    "   the RIGHT edge of the AMMONIA WORLDS zone (Earth-likes in the\n"
+                    "   middle). Detection divides this segment into equal thirds:\n"
+                    "   Water | Earth-like | Ammonia.\n"
+                    "3. Top/Bottom tight around the waveform: bottom on the baseline,\n"
+                    "   top just above the tallest signal peaks.",
             "readonly": False},
         # "EDStationServicesInShip.carrier_admin_header": {"rect": [0.4, 0.1, 0.6, 0.2]},
         # "EDStationServicesInShip.commodities_list": {"rect": [0.2, 0.2, 0.8, 0.9]},

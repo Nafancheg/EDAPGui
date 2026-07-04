@@ -974,17 +974,27 @@ class EDAutopilot:
                 self.set_throttle_100()
             return False
 
-        # look for a circle or signal in this region
-        elw_image, (minVal, maxVal, minLoc, maxLoc), match = scr_reg.match_template_in_region('fss', 'elw')
-        elw_sig_image, (minVal1, maxVal1, minLoc1, maxLoc1), match = scr_reg.match_template_in_image(elw_image, 'elw_sig')
+        # Capture the calibrated Water/Earth-like/Ammonia segment of the spectral bar
+        # (EDFSS -> subregion 'elw_zones', calibratable in the Calibration tab).
+        region = self.fss_screen.reg['elw_zones']
+        img = self.ocr.capture_region_pct(region)
+        if img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
-        # Log screenshot of the actual detection strip for diagnostics/calibration
-        img = scr_reg.capture_region_percent(self.scr, 'fss')
+        # Log screenshot of the actual detection segment for diagnostics/calibration
         f = get_timestamped_filename(f'[fss_detect_elw] {self.jn.ship_state()["cur_star_system"]}', '', 'png')
         cv2.imwrite(f'{self.debug_image_folder}/{f}', img)
 
-        # dvide the region in thirds.  Earth, then Water, then Ammonio
-        wid_div3 = scr_reg.reg['fss']['width']/3
+        # Look for the signal waveform in this segment
+        elw_image = scr_reg.equalize(img)
+        elw_sig_image, (minVal1, maxVal1, minLoc1, maxLoc1), match = scr_reg.match_template_in_image(elw_image, 'elw_sig')
+
+        # Classify by the match center. The segment covers exactly the three zones,
+        # in bar order (left to right): Water, Earth-like, Ammonia.
+        strip_height, strip_width = elw_image.shape[:2]
+        sig_w = scr_reg.templates.template['elw_sig']['width']
+        match_x = maxLoc1[0] + sig_w / 2
+        wid_div3 = strip_width / 3
 
         # Exit out of FSS, we got the images we need to process
         self.keys.send('ExplorationFSSQuit')
@@ -1005,16 +1015,14 @@ class EDAutopilot:
             cv2.moveWindow('fss', self.cv_view_x, self.cv_view_y+100)
             cv2.waitKey(30)
 
-        logger.info("elw detected:{0:6.2f} ".format(maxVal)+" sig:{0:6.2f}".format(maxVal1))
+        logger.info("elw sig:{0:6.2f} at x:{1} of {2}".format(maxVal1, int(match_x), strip_width))
 
-        # check if the circle or the signal meets probability number, if so, determine which type by its region
-        # if (maxVal > 0.65 or (maxVal1 > 0.60 and maxLoc1[1] < 30) ):
-        # only check for single
-        if maxVal1 > 0.70 and maxLoc1[1] < 30:
-            # The FSS spectral analysis bar zone order (left to right) is: Water, Earth-like, Ammonia
-            if maxLoc1[0] < wid_div3:
+        # Check the signal meets the probability number and sits in the waveform area
+        # (upper half of the segment, above the ruler), then classify by zone third.
+        if maxVal1 > 0.70 and maxLoc1[1] < strip_height * 0.5:
+            if match_x < wid_div3:
                 sstr = "Water"
-            elif maxLoc1[0] > (wid_div3*2):
+            elif match_x > (wid_div3*2):
                 sstr = "Ammonia"
             else:
                 sstr = "Earth"
@@ -1022,7 +1030,7 @@ class EDAutopilot:
             f = open("elw.txt", 'a')
             f.write(self.jn.ship_state()["location"]+", Type: "+sstr +
                     ", Probabilty: {0:3.0f}% ".format((maxVal1*100)) +
-                    ", MatchX: "+str(maxLoc1[0])+"/"+str(scr_reg.reg['fss']['width']) +
+                    ", MatchX: "+str(int(match_x))+"/"+str(strip_width) +
                     ", Date: "+str(datetime.now())+str("\n"))
             f.close()
             type_names = {'Earth': self.locale_safe('ELW_TYPE_EARTH', 'Earth-like world'),

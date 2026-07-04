@@ -18,10 +18,14 @@ class EDFSS:
         # The rect is top left x, y, and bottom right x, y in fraction of screen resolution
         self.reg = {'full_panel': {'rect': [0.1, 0.1, 0.9, 0.9]},
                     'analysis': {'rect': [0.0, 0.0, 0.25, 0.25]},
+                    # The Water/Earth-like/Ammonia segment of the spectral analysis bar,
+                    # used by the ELW scanner. Calibratable as an EDFSS subregion.
+                    'elw_zones': {'rect': [0.4785, 0.7500, 0.5420, 0.8150]},
                     }
         self.reg_quad: dict[str, Quad] = {
             'full_panel': Quad(),
             'analysis': Quad(),
+            'elw_zones': Quad(),
             }
 
         # Load custom regions from file
