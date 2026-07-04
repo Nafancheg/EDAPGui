@@ -257,6 +257,12 @@ class EDJournal:
             'StationServices': None,
             'ConstructionDepotDetails': dict[str, any],
             'MarketID': 0,
+            'scanned_bodies': {},      # BodyName -> body info from 'Scan'/'FSSBodySignals' events
+            'fss_body_count': 0,       # BodyCount from the discovery scan (honk), stars included
+            'fss_non_body_count': 0,
+            'fss_progress': 0.0,       # Progress from FSSDiscoveryScan; 1.0 = nothing left to find
+            'fss_all_found': False,    # FSSAllBodiesFound seen this system
+            'fss_honk_done': False,    # FSSDiscoveryScan seen this system
         }
         self.ship_state()    # load up from file
         self.reset_items()
@@ -487,6 +493,13 @@ class EDJournal:
             if log_event == 'FSDJump':
                 self.ship['location'] = log['StarSystem']
                 self.ship['cur_star_system'] = log['StarSystem']
+                # New system - clear the exploration scan state
+                self.ship['scanned_bodies'] = {}
+                self.ship['fss_body_count'] = 0
+                self.ship['fss_non_body_count'] = 0
+                self.ship['fss_progress'] = 0.0
+                self.ship['fss_all_found'] = False
+                self.ship['fss_honk_done'] = False
 #TODO                if 'StarClass' in log:
 #TODO                    self.ship['star_class'] = log['StarClass']
 
@@ -524,6 +537,58 @@ class EDJournal:
                 self.ship['StationServices'] = log['StationServices']
                 self.ship['exp_station_type'] = check_station_type(log['StationType'], log['StationName'], self.ship['StationServices'])
                 self.ship['MarketID'] = log['MarketID']
+
+            elif log_event == 'FSSDiscoveryScan':
+                # Discovery scan (honk): body count and how much of the system is already resolved
+                self.ship['fss_progress'] = log.get('Progress', 0.0)
+                self.ship['fss_body_count'] = log.get('BodyCount', 0)
+                self.ship['fss_non_body_count'] = log.get('NonBodyCount', 0)
+                self.ship['fss_honk_done'] = True
+
+            elif log_event == 'FSSAllBodiesFound':
+                self.ship['fss_all_found'] = True
+                self.ship['fss_body_count'] = log.get('Count', self.ship['fss_body_count'])
+
+            elif log_event == 'Scan':
+                # Fires when a body resolves in the FSS (or autoscan). Belt clusters are not
+                # counted in the honk BodyCount, so skip them to keep scanned/total consistent.
+                body_name = log.get('BodyName', '')
+                if body_name and 'Belt Cluster' not in body_name:
+                    bodies = dict(self.ship['scanned_bodies'])
+                    entry = bodies.get(body_name, {'bio_signals': 0, 'geo_signals': 0})
+                    entry.update({
+                        'BodyName': body_name,
+                        'has_scan': True,
+                        'is_star': 'StarType' in log,
+                        'PlanetClass': log.get('PlanetClass', ''),
+                        'StarType': log.get('StarType', ''),
+                        'TerraformState': log.get('TerraformState', ''),
+                        'Landable': log.get('Landable', False),
+                        # Default True so a truncated event never yields a false "first discovery"
+                        'WasDiscovered': log.get('WasDiscovered', True),
+                        'WasMapped': log.get('WasMapped', True),
+                        'DistanceLS': log.get('DistanceFromArrivalLS', 0.0),
+                    })
+                    bodies[body_name] = entry
+                    self.ship['scanned_bodies'] = bodies
+
+            elif log_event == 'FSSBodySignals':
+                # Bio/geo surface signals; may arrive before or after the 'Scan' of the same body
+                body_name = log.get('BodyName', '')
+                if body_name:
+                    bodies = dict(self.ship['scanned_bodies'])
+                    entry = bodies.get(body_name, {
+                        'BodyName': body_name, 'has_scan': False, 'is_star': False,
+                        'PlanetClass': '', 'StarType': '', 'TerraformState': '',
+                        'Landable': False, 'WasDiscovered': True, 'WasMapped': True,
+                        'DistanceLS': 0.0, 'bio_signals': 0, 'geo_signals': 0})
+                    for sig in log.get('Signals', []):
+                        if 'Biological' in sig.get('Type', ''):
+                            entry['bio_signals'] = sig.get('Count', 0)
+                        elif 'Geological' in sig.get('Type', ''):
+                            entry['geo_signals'] = sig.get('Count', 0)
+                    bodies[body_name] = entry
+                    self.ship['scanned_bodies'] = bodies
 
             elif log_event == 'ColonisationConstructionDepot':
                 # {"timestamp": "2025-06-24T02:20:26Z", "event": "ColonisationConstructionDepot",

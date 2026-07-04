@@ -239,6 +239,14 @@ class EDAutopilot:
         self.edsm_undiscovered = False
         self._elw_scanned_this_system = False
 
+        # FSS scan advisor state (journal-driven, see poll_body_scans)
+        self._fss_announced = None       # None => first poll seeds silently (journal replay guard)
+        self._fss_pending = set()        # bodies seen once, announced on the NEXT poll
+        self._fss_honk_announced = False
+        self._fss_allfound_announced = False
+        self._fss_last_system = ''
+        self._fss_valuables = []         # list[(short_name, marker_str)] for the status lines
+
         # Initialize the Overlay class
         self.overlay = Overlay("", elite=1)
         self.overlay.overlay_setfont(self.config['OverlayTextFont'], self.config['OverlayTextFontSize'])
@@ -675,6 +683,18 @@ class EDAutopilot:
         if self.edsm_info:
             # Highlight a potentially undiscovered system
             lines.append((self.edsm_info, self.edsm_undiscovered))
+
+        # FSS scan advisor: progress and the latest valuable bodies of the current system
+        ship = self.jn.ship_state()
+        if ship.get('fss_honk_done') or ship.get('scanned_bodies'):
+            scanned = sum(1 for e in ship['scanned_bodies'].values() if e.get('has_scan'))
+            total = ship.get('fss_body_count', 0)
+            prog = f"{scanned}/{total}" if total else str(scanned)
+            if ship.get('fss_all_found'):
+                prog += " " + self.locale_safe('FSS_COMPLETE_MARK', 'DONE')
+            lines.append((self.locale_safe('OVL_FSS_PROGRESS', 'FSS SCAN') + ": " + prog, False))
+            for nm, marker in self._fss_valuables[-4:]:
+                lines.append((f"  {nm}: {marker}", True))
         return lines
 
     def update_overlay(self):
@@ -684,8 +704,8 @@ class EDAutopilot:
             for i, (txt, highlight) in enumerate(lines, start=1):
                 color = (0, 180, 0) if highlight else (136, 53, 0)
                 self.overlay.overlay_text(str(i), txt, i, 1, color, -1)
-            # Clear the unused line slots (e.g. when the ELW/EDSM lines disappear)
-            for i in range(len(lines) + 1, 10):
+            # Clear the unused line slots (e.g. when the ELW/EDSM/FSS lines disappear)
+            for i in range(len(lines) + 1, 15):
                 self.overlay.overlay_remove_text(str(i))
             self.overlay.overlay_paint()
 
@@ -885,6 +905,104 @@ class EDAutopilot:
         # reload the templates with the new (or previous value)
         self.templ.reload_templates(self.scr.scaleX, self.scr.scaleY)
 
+    @staticmethod
+    def _body_is_valuable(e) -> bool:
+        """ Whether a scanned body is worth the player's attention (text advisory). """
+        return (e.get('PlanetClass') in ('Earthlike body', 'Water world', 'Ammonia world')
+                or e.get('TerraformState') == 'Terraformable'
+                or e.get('bio_signals', 0) > 0 or e.get('geo_signals', 0) > 0)
+
+    def _announce_body(self, e, system: str):
+        """ Log a text verdict for a body that just resolved in the FSS. No voice. """
+        short = e['BodyName'].removeprefix(system).strip() or e['BodyName']
+        cls_map = {'Earthlike body': self.locale_safe('ELW_TYPE_EARTH', 'Earth-like world'),
+                   'Water world': self.locale_safe('ELW_TYPE_WATER', 'Water world'),
+                   'Ammonia world': self.locale_safe('ELW_TYPE_AMMONIA', 'Ammonia world')}
+        cls = cls_map.get(e['PlanetClass'], e['PlanetClass'] or 'body')
+
+        if not self._body_is_valuable(e):
+            return
+
+        parts = [cls]
+        if e.get('TerraformState') == 'Terraformable':
+            parts.append(self.locale_safe('FSS_TERRAFORMABLE', 'terraformable'))
+        if e.get('bio_signals', 0):
+            parts.append(self.locale_safe('FSS_BIO', '{count} bio').format(count=e['bio_signals']))
+        if e.get('geo_signals', 0):
+            parts.append(self.locale_safe('FSS_GEO', '{count} geo').format(count=e['geo_signals']))
+
+        if not e.get('WasDiscovered', True):
+            status = self.locale_safe('FSS_FIRST_DISCOVERY', 'First discovery!')
+            marker = '[1st!]'
+        elif not e.get('WasMapped', True):
+            status = self.locale_safe('FSS_MAPPING_BONUS', 'Discovered, not mapped - mapping bonus.')
+            marker = '[map$]'
+        else:
+            status = self.locale_safe('FSS_KNOWN_BODY', 'Already discovered and mapped - skip.')
+            marker = '[known]'
+
+        self.ap_ckb('log', f"{short}: {', '.join(parts)}. {status}")
+        self._fss_valuables.append((short, f"{', '.join(parts)} {marker}"))
+        self.update_overlay()
+
+    def poll_body_scans(self):
+        """ FSS scan advisor: watch the journal for bodies resolved in the FSS and report
+        (text only) whether they are valuable and already discovered/mapped. Called ~1x/sec
+        from the engine loop; inert unless Scan/FSS events appear in the journal. """
+        ship = self.jn.ship_state()
+        bodies = ship.get('scanned_bodies') or {}
+        system = ship.get('cur_star_system') or ''
+
+        # First poll after startup: the whole journal file was replayed - seed silently
+        if self._fss_announced is None:
+            self._fss_announced = set(bodies.keys())
+            self._fss_honk_announced = ship.get('fss_honk_done', False)
+            self._fss_allfound_announced = ship.get('fss_all_found', False)
+            self._fss_last_system = system
+            return
+
+        if system != self._fss_last_system:
+            # Safety net in addition to the journal FSDJump reset
+            self._fss_last_system = system
+            self._fss_announced.clear()
+            self._fss_pending.clear()
+            self._fss_valuables = []
+            self._fss_honk_announced = False
+            self._fss_allfound_announced = False
+
+        if ship.get('fss_honk_done') and not self._fss_honk_announced:
+            self._fss_honk_announced = True
+            if ship.get('fss_progress', 0.0) >= 1.0:
+                self.ap_ckb('log', self.locale_safe(
+                    'FSS_HONK_NOTHING', 'Discovery scan: nothing left to find here.'))
+            else:
+                self.ap_ckb('log', self.locale_safe(
+                    'FSS_HONK_BODIES', 'Discovery scan: {count} bodies in system.').format(
+                    count=ship.get('fss_body_count', 0)))
+
+        # Per-body verdicts with a 1-poll delay so a lagging FSSBodySignals event
+        # can merge with its Scan before the verdict is printed
+        for name, e in bodies.items():
+            if name in self._fss_announced or not e.get('has_scan'):
+                continue
+            if e.get('is_star'):
+                self._fss_announced.add(name)  # stars count for progress, no report
+                continue
+            if name not in self._fss_pending:
+                self._fss_pending.add(name)
+                continue
+            self._fss_pending.discard(name)
+            self._fss_announced.add(name)
+            self._announce_body(e, system)
+
+        if ship.get('fss_all_found') and not self._fss_allfound_announced:
+            self._fss_allfound_announced = True
+            n_val = sum(1 for e in bodies.values()
+                        if e.get('has_scan') and self._body_is_valuable(e))
+            self.ap_ckb('log', self.locale_safe(
+                'FSS_ALL_FOUND', 'System scan complete. {valuable} valuable bodies.').format(
+                valuable=n_val))
+
     def edsm_check_system(self, system_name: str):
         """ Query EDSM online to see if the system is already discovered and what notable
         bodies it contains. Intended to run in a background thread after each jump;
@@ -938,10 +1056,27 @@ class EDAutopilot:
         if terra:
             notable += f' Terra:{terra}'
 
+        # Per-body details for valuable bodies: who discovered them and when
+        for b in bodies:
+            sub = b.get('subType')
+            b_terra = b.get('terraformingState') == 'Candidate for terraforming'
+            if sub in ('Earth-like world', 'Water world', 'Ammonia world') or b_terra:
+                d = b.get('discovery') or {}
+                when = (d.get('date') or '')[:10]
+                terra_mark = ' (terra)' if b_terra else ''
+                self.ap_ckb('log', f"  {b.get('name')}: {sub}{terra_mark}"
+                                   f" - {d.get('commander', '?')} {when}")
+
         # Check if the system is only partially explored
         partial = ''
-        if body_count is not None and body_count > len(bodies):
-            partial = f' ({body_count - len(bodies)} {self.locale_safe("EDSM_UNKNOWN", "unknown")})'
+        if body_count is not None:
+            if body_count <= len(bodies):
+                partial = f' ({self.locale_safe("EDSM_FULLY_KNOWN", "fully known")})'
+            else:
+                unknown_cnt = body_count - len(bodies)
+                partial = f' ({unknown_cnt} {self.locale_safe("EDSM_UNKNOWN", "unknown")})'
+                self.ap_ckb('log', self.locale_safe(
+                    'EDSM_UNKNOWN_BODIES', '{count} bodies unknown to EDSM.').format(count=unknown_cnt))
 
         self.edsm_undiscovered = False
         bodies_word = self.locale_safe('EDSM_BODIES', 'bodies')
@@ -3553,6 +3688,10 @@ class EDAutopilot:
                         # Reload templates for this ship
                         self.templ.reload_templates(self.scr.scaleX, self.scr.scaleY)
 
+            try:
+                self.poll_body_scans()
+            except Exception as e:
+                logger.debug(f'poll_body_scans failed: {e}')
             self.update_overlay()
             cv2.waitKey(10)
             # Catch EDAP_Interrupt raised while idle to prevent killing the engine loop
