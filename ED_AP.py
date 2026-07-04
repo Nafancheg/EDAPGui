@@ -13,6 +13,7 @@ from tkinter import messagebox
 from typing import TypedDict
 
 import cv2
+import numpy as np
 
 from EDAPColonizeEditor import read_json_file, write_json_file
 from EDFSS import EDFSS
@@ -1200,6 +1201,112 @@ class EDAutopilot:
             if verdict == self.locale_safe('ELW_NOTHING_FOUND', 'nothing found'):
                 self.vce.say(verdict)
         self.update_overlay()
+
+    # --- Auto FSS (stage 2, part A: blob detection + dry-run test) ---
+
+    AUTO_FSS_REQUIRED_BINDS = ['ExplorationFSSEnter', 'ExplorationFSSQuit',
+                               'ExplorationFSSZoomIn', 'ExplorationFSSZoomOut',
+                               'ExplorationFSSCameraPitchIncreaseButton',
+                               'ExplorationFSSCameraPitchDecreaseButton',
+                               'ExplorationFSSCameraYawIncreaseButton',
+                               'ExplorationFSSCameraYawDecreaseButton']
+
+    def auto_fss_missing_binds(self) -> list[str]:
+        """ The FSS binds the auto scanner needs but which have no keyboard key in the
+        game bindings (joystick-only binds cannot be sent by EDAP). """
+        return [k for k in self.AUTO_FSS_REQUIRED_BINDS if self.keys.keys.get(k) is None]
+
+    def fss_find_signal_blobs(self, img):
+        """ Find unresolved FSS signal blobs (pale wisps) in a full-screen FSS capture.
+        Saturation/Value based, so it is robust to RGB/BGR channel order: the wisps are
+        pale (low saturation), the orange HUD is saturated, the star glare is near-white
+        but far brighter than a wisp.
+        @return: (blobs, annotated_image); blobs = list of {'x','y','area'} in screen
+                 fractions, sorted by distance from the screen center. """
+        if img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        h, w = img.shape[:2]
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        sat = hsv[:, :, 1]
+        val = cv2.GaussianBlur(hsv[:, :, 2], (21, 21), 0)
+
+        lo = int(self.config.get('AutoFSSBlobThreshold', 48))
+        cand = ((sat < 110) & (val > lo)).astype(np.uint8) * 255
+
+        # Cut out saturated-bright cores: central star glare, resolved bodies, HUD text
+        bright = (val > 200).astype(np.uint8) * 255
+        bright = cv2.dilate(bright, np.ones((25, 25), np.uint8))
+        cand[bright > 0] = 0
+
+        # Mask the fixed HUD areas: spectrum bar at the bottom, headers, side margins
+        cand[int(h * 0.70):, :] = 0
+        cand[:int(h * 0.08), :] = 0
+        cand[:, :int(w * 0.03)] = 0
+        cand[:, int(w * 0.97):] = 0
+        cand = cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+
+        contours, _ = cv2.findContours(cand, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        scale = (h / 1440.0) ** 2
+        min_area = 250 * scale
+        max_area = 40000 * scale
+        blobs = []
+        annotated = img.copy()
+        for c in contours:
+            a = cv2.contourArea(c)
+            if a < min_area or a > max_area:
+                continue
+            x, y, bw, bh = cv2.boundingRect(c)
+            blobs.append({'x': (x + bw / 2) / w, 'y': (y + bh / 2) / h, 'area': a / (w * h)})
+            cv2.rectangle(annotated, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
+            cv2.putText(annotated, str(len(blobs)), (x, max(12, y - 6)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        blobs.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
+        return blobs, annotated
+
+    def test_auto_fss_detect(self):
+        """ Auto-FSS dry run (mini panel button): open the FSS if needed, detect the
+        unresolved signal blobs, save an annotated debug screenshot and report the result.
+        Takes no scans and presses no zoom/camera keys - calibration aid for part B. """
+        set_focus_elite_window()
+        sleep(0.25)
+
+        missing = self.auto_fss_missing_binds()
+        if missing:
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_MISSING_BINDS',
+                'Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.').format(
+                keys=', '.join(missing)))
+
+        # If the FSS is not open yet, stop the ship and open it (leave it as we found it)
+        opened_here = False
+        if self.status.get_gui_focus() != GuiFocusFSS:
+            self.set_throttle_0()
+            self.keys.send('ExplorationFSSEnter')
+            sleep(float(self.config['Wait_FSSDetect']))
+            opened_here = True
+            if self.status.get_gui_focus() != GuiFocusFSS:
+                self.ap_ckb('log', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
+                return
+
+        img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+        if img is None:
+            self.ap_ckb('log', 'Auto FSS: screen capture failed')
+            return
+        blobs, annotated = self.fss_find_signal_blobs(img)
+
+        fname = os.path.join(self.debug_image_folder,
+                             'afss_blobs_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
+        cv2.imwrite(fname, annotated)
+
+        self.ap_ckb('log', self.locale_safe(
+            'AFSS_BLOBS_FOUND', 'Auto FSS test: {count} signal blobs found, screenshot: {file}').format(
+            count=len(blobs), file=os.path.basename(fname)))
+        for i, b in enumerate(blobs[:10], start=1):
+            self.ap_ckb('log', f"  blob {i}: x={b['x']:.3f} y={b['y']:.3f} area={b['area'] * 100:.3f}%")
+        logger.info(f"Auto FSS dry run: {len(blobs)} blobs, image {fname}, missing binds: {missing}")
+
+        if opened_here:
+            self.keys.send('ExplorationFSSQuit')
 
     def have_destination(self, scr_reg) -> bool:
         """

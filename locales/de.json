@@ -44,6 +44,9 @@
     "FSS_BIO": "{count} Bio",
     "FSS_GEO": "{count} Geo",
     "FSS_COMPLETE_MARK": "FERTIG",
+    "MINI_BTN_AFSS": "AFSS",
+    "AFSS_MISSING_BINDS": "Auto-FSS: keine Tastaturtaste für: {keys}. In den Spieleinstellungen belegen.",
+    "AFSS_BLOBS_FOUND": "Auto-FSS-Test: {count} Signal-Blobs gefunden, Screenshot: {file}",
 
     "OVERHEAT_AVOID_STAR": "Überhitzung, weiche dem Stern aus",
     "OVERHEAT_ABORT_ALIGN": "Überhitzung - Ausrichtung abgebrochen",

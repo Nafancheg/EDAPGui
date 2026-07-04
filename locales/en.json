@@ -44,6 +44,9 @@
     "FSS_BIO": "{count} bio",
     "FSS_GEO": "{count} geo",
     "FSS_COMPLETE_MARK": "DONE",
+    "MINI_BTN_AFSS": "AFSS",
+    "AFSS_MISSING_BINDS": "Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.",
+    "AFSS_BLOBS_FOUND": "Auto FSS test: {count} signal blobs found, screenshot: {file}",
 
     "OVERHEAT_AVOID_STAR": "Overheating, avoiding star",
     "OVERHEAT_ABORT_ALIGN": "Overheating - aborting align",

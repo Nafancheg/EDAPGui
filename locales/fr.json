@@ -44,6 +44,9 @@
     "FSS_BIO": "{count} bio",
     "FSS_GEO": "{count} géo",
     "FSS_COMPLETE_MARK": "TERMINÉ",
+    "MINI_BTN_AFSS": "AFSS",
+    "AFSS_MISSING_BINDS": "Auto-FSS : aucune touche clavier pour : {keys}. Assignez-les dans les options du jeu.",
+    "AFSS_BLOBS_FOUND": "Test auto-FSS : {count} signaux détectés, capture : {file}",
 
     "OVERHEAT_AVOID_STAR": "Surchauffe, évitement de l'étoile",
     "OVERHEAT_ABORT_ALIGN": "Surchauffe - alignement interrompu",

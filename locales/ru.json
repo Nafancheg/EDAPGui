@@ -44,6 +44,9 @@
     "FSS_BIO": "био: {count}",
     "FSS_GEO": "гео: {count}",
     "FSS_COMPLETE_MARK": "ГОТОВО",
+    "MINI_BTN_AFSS": "АFSS",
+    "AFSS_MISSING_BINDS": "Авто-FSS: нет клавиатурной клавиши для: {keys}. Назначьте их в настройках игры.",
+    "AFSS_BLOBS_FOUND": "Тест авто-FSS: найдено клякс-сигналов: {count}, скриншот: {file}",
 
     "OVERHEAT_AVOID_STAR": "Перегрев, отворачиваю от звезды",
     "OVERHEAT_ABORT_ALIGN": "Перегрев — прерываю наведение",

@@ -790,6 +790,11 @@ class APGui:
                             activebackground='#2a5578', activeforeground='#9fd8ff',
                             relief='flat', bd=0, font=('Arial', 9, 'bold'))
         btn_fss.grid(row=0, column=5, padx=2)
+        btn_afss = tk.Button(body, text=self.t('MINI_BTN_AFSS', 'AFSS'), width=5,
+                             command=self.test_auto_fss_click, bg='#3a2a52', fg='#b09fff',
+                             activebackground='#55407a', activeforeground='#cdbfff',
+                             relief='flat', bd=0, font=('Arial', 9, 'bold'))
+        btn_afss.grid(row=0, column=6, padx=2)
 
         # Status/overlay info block, refreshed periodically
         self.mini_info = tk.Label(panel, text='', bg='#101010', fg='#e0a060',
@@ -820,6 +825,11 @@ class APGui:
     def test_fss_click(self):
         """ Mini panel FSS test: stop, open the FSS, run the ELW detection and report the verdict. """
         threading.Thread(target=self.ed_ap.test_fss_scan, daemon=True).start()
+
+    def test_auto_fss_click(self):
+        """ Mini panel auto-FSS dry run: detect unresolved signal blobs in the FSS view,
+        save an annotated debug screenshot. No scanning yet (stage 2 calibration aid). """
+        threading.Thread(target=self.ed_ap.test_auto_fss_detect, daemon=True).start()
 
     def t(self, key: str, default: str) -> str:
         if key is None:
