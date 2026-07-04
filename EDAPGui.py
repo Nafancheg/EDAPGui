@@ -766,8 +766,8 @@ class APGui:
         body = tk.Frame(panel, bg='#101010')
         body.pack(padx=4, pady=4)
 
-        def mk_toggle(col, text, field, on_color='#ff8800', on_bg='#5a3000'):
-            b = tk.Checkbutton(body, text=text, indicatoron=False, width=5,
+        def mk_toggle(col, text, field, on_color='#ff8800', on_bg='#5a3000', width=5):
+            b = tk.Checkbutton(body, text=text, indicatoron=False, width=width,
                                variable=self.checkboxvar[field],
                                command=(lambda f=field: self.check_cb(f)),
                                bg='#242424', fg=on_color, selectcolor=on_bg,
@@ -784,7 +784,7 @@ class APGui:
                              activebackground='#7c2020', activeforeground='white',
                              relief='flat', bd=0, font=('Arial', 9, 'bold'))
         btn_stop.grid(row=0, column=3, padx=2)
-        mk_toggle(4, self.t('MINI_BTN_FAST', 'FAST'), 'Fast Travel', on_color='#30c030', on_bg='#124012')
+        mk_toggle(4, self.t('MINI_BTN_FAST', 'FAST'), 'Fast Travel', on_color='#30c030', on_bg='#124012', width=8)
         btn_fss = tk.Button(body, text=self.t('MINI_BTN_FSS', 'FSS'), width=5,
                             command=self.test_fss_click, bg='#1d3a52', fg='#6fc3ff',
                             activebackground='#2a5578', activeforeground='#9fd8ff',
