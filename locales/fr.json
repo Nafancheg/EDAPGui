@@ -42,6 +42,9 @@
     "GUI_BTN_MINI_PANEL": "Mini panneau (au-dessus du jeu)",
     "MINI_BTN_STOP": "STOP",
     "MINI_BTN_FAST": "RAPIDE",
+    "ALIGN_STAR_AHEAD": "Étoile devant la cible, je la contourne d'abord",
+    "JUMP_BLOCKED_STAR": "FSD bloqué par l'étoile, éloignement",
+    "REFUEL_ABORT_SCOOP": "Ravitaillement interrompu, pas de collecte",
 
     "INT_PNL_TAB_MODULES": "?",
     "INT_PNL_TAB_FIRE_GROUPS": "?",

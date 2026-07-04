@@ -1983,6 +1983,16 @@ class EDAutopilot:
                 self.compass_align(scr_reg)  # Compass Align
 
             elif align_res == ScTargetAlignReturn.Found:
+                # Check the star is not in front of us after aligning. The FSD charges for
+                # ~15s at 100% throttle, so jumping with the star ahead flies us into it.
+                if self.is_sun_dead_ahead(scr_reg):
+                    self.ap_ckb('log+vce', self.locale_safe('ALIGN_STAR_AHEAD', 'Star in front of target, flying past it first'))
+                    self.sun_avoid(scr_reg, scooping=False)
+                    self.set_throttle_100()
+                    sleep(float(self.config['Wait_PastSun']))
+                    self.set_throttle_50()
+                    self.compass_align(scr_reg)
+                    continue
                 self.set_throttle_100()
                 return
 
@@ -2306,9 +2316,10 @@ class EDAutopilot:
 
         fast_travel = self.config.get('FastTravelMode', False)
         if fast_travel:
-            # Fast Travel - no scanning. Only wait for heat to dissipate if we are actually hot.
-            if self.status.get_flag(FlagsOverHeating):
-                sleep(float(self.config['Wait_HeatDissipate']))
+            # Fast Travel - no scanning, but the ship still needs the full escape time at
+            # 100% throttle. Without it we turn back towards the target (often near the
+            # star) far too close to it and fly into the star.
+            sleep(float(self.config['Wait_HeatDissipate']))
         elif self.config["ElwScannerEnable"]:
             self.fss_detect_elw(scr_reg)
             if self.config["EnableRandomness"]:
@@ -2352,6 +2363,16 @@ class EDAutopilot:
             res = self.status.wait_for_flag_on(FlagsFsdCharging, 5)
             if not res:
                 logger.error('FSD failed to charge.')
+                # Charging is blocked while fuel scooping or overheating near the star.
+                # Get away from the star and realign before retrying, otherwise we keep
+                # flying towards the star at 100% throttle with the FSD refusing to charge.
+                if (self.status.get_flag(FlagsScoopingFuel) or self.status.get_flag(FlagsOverHeating)
+                        or self.is_sun_dead_ahead(scr_reg)):
+                    self.ap_ckb('log+vce', self.locale_safe('JUMP_BLOCKED_STAR', 'FSD blocked by the star, escaping'))
+                    self.sun_avoid(scr_reg, scooping=False)
+                    self.set_throttle_100()
+                    sleep(float(self.config['Wait_PastSun']))
+                    self.mnvr_to_target(scr_reg)
                 continue
 
             res = self.status.wait_for_flag_on(FlagsFsdJump, 30)
@@ -2447,7 +2468,7 @@ class EDAutopilot:
                     self.set_throttle_0()
 
                 if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                    self.vce.say("Refueling abort, insufficient scooping")
+                    self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
                     return False
 
             logger.debug('refuel= wait for refuel')
@@ -2462,7 +2483,7 @@ class EDAutopilot:
                     self.set_throttle_0()
 
                 if ((time.time()-startime) > int(self.config['FuelScoopTimeOut'])):
-                    self.vce.say("Refueling abort, insufficient scooping")
+                    self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
                     return True
                 sleep(1)
 
@@ -2579,7 +2600,7 @@ class EDAutopilot:
                 return False
 
             if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                self.vce.say("Refueling abort, insufficient scooping")
+                self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
                 return False
 
         logger.debug('refuel=refueling')
@@ -2602,7 +2623,7 @@ class EDAutopilot:
                 return True
 
             if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                self.vce.say("Refueling abort, insufficient scooping")
+                self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
                 self.ship_control.pitch_up_down(20)
                 return True
 

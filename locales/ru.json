@@ -42,6 +42,9 @@
     "GUI_BTN_MINI_PANEL": "Мини-панель (поверх игры)",
     "MINI_BTN_STOP": "СТОП",
     "MINI_BTN_FAST": "БЫСТРО",
+    "ALIGN_STAR_AHEAD": "Звезда перед целью, сначала облетаю её",
+    "JUMP_BLOCKED_STAR": "FSD заблокирован звездой, отхожу",
+    "REFUEL_ABORT_SCOOP": "Заправка прервана: скуп не начался",
 
     "INT_PNL_TAB_MODULES": "Модули",
     "INT_PNL_TAB_FIRE_GROUPS": "Огневые группы",
