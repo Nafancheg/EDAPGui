@@ -360,7 +360,14 @@ def load_default_calib_data() -> dict[str, MyRegion]:
                                                     "text": "The area above the radar where the supercruise overdrive active message appears.",
                                                     "readonly": False},
         "Screen_Regions.full_panel.subregion.fss": {"rect": [0.5045, 0.7545, 0.532, 0.7955],
-                                                    "text": "Should be replaced with the FSS screen regions.",
+                                                    "text": "ELW detection strip on the FSS spectral analysis bar.\n"
+                                                            "1. Stop the ship (0% throttle) and open the FSS.\n"
+                                                            "2. Adjust Left/Right so the rect spans exactly from the LEFT edge\n"
+                                                            "   of the WATER WORLDS zone to the RIGHT edge of the AMMONIA WORLDS\n"
+                                                            "   zone (Earth-likes in the middle). Zone detection divides this\n"
+                                                            "   strip into equal thirds: Water | Earth-like | Ammonia.\n"
+                                                            "3. Adjust Top/Bottom tight around the waveform: bottom on the\n"
+                                                            "   baseline, top just above the tallest signal peaks.",
                                                     "readonly": False},
         "Screen_Regions.full_panel.subregion.mission_dest": {"rect": [0.46, 0.38, 0.65, 0.86],
                                                              "text": "TBD.",

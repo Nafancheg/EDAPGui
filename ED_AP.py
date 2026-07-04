@@ -983,12 +983,6 @@ class EDAutopilot:
         f = get_timestamped_filename(f'[fss_detect_elw] {self.jn.ship_state()["cur_star_system"]}', '', 'png')
         cv2.imwrite(f'{self.debug_image_folder}/{f}', img)
 
-        # Wide capture of the whole spectral analysis bar (with zone labels) for calibrating
-        # the 'fss' strip position on this resolution.
-        wide = self.ocr.capture_region_pct({'rect': [0.28, 0.66, 0.74, 0.92]})
-        fw = get_timestamped_filename(f'[fss_wide] {self.jn.ship_state()["cur_star_system"]}', '', 'png')
-        cv2.imwrite(f'{self.debug_image_folder}/{fw}', wide)
-
         # dvide the region in thirds.  Earth, then Water, then Ammonio
         wid_div3 = scr_reg.reg['fss']['width']/3
 
