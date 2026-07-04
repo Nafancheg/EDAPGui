@@ -237,6 +237,7 @@ class EDAutopilot:
         self.fss_detected = self.locale_safe('ELW_NOTHING_FOUND', 'nothing found')
         self.edsm_info = ""
         self.edsm_undiscovered = False
+        self._elw_scanned_this_system = False
 
         # Initialize the Overlay class
         self.overlay = Overlay("", elite=1)
@@ -952,9 +953,12 @@ class EDAutopilot:
             self.ap_ckb('log', f'EDSM {system_name}: {len(bodies)} {bodies_word}{partial}{disc}')
         self.update_overlay()
 
-    def fss_detect_elw(self, scr_reg):
+    def fss_detect_elw(self, scr_reg, restore_throttle: bool = True) -> bool:
         """ Go into FSS, check to see if we have a signal waveform in the Earth, Water or Ammonia zone
-        if so, announce finding and log the type of world found. """
+        if so, announce finding and log the type of world found.
+        @param restore_throttle: Set throttle back to 100% when done. Pass False when the ship
+            must stay stopped (e.g. scanning during the fuel scooping stop).
+        @return: True if the scan was performed, False if the FSS did not open. """
         # open fss
         self.set_throttle_0()
         sleep(0.1)
@@ -966,8 +970,9 @@ class EDAutopilot:
         if self.status.get_gui_focus() != GuiFocusFSS:
             logger.warning('fss_detect_elw: FSS did not open, skipping ELW detection')
             self.fss_detected = self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open')
-            self.set_throttle_100()
-            return
+            if restore_throttle:
+                self.set_throttle_100()
+            return False
 
         # look for a circle or signal in this region
         elw_image, (minVal, maxVal, minLoc, maxLoc), match = scr_reg.match_template_in_region('fss', 'elw')
@@ -1030,9 +1035,10 @@ class EDAutopilot:
         else:
             self.fss_detected = self.locale_safe('ELW_NOTHING_FOUND', 'nothing found')
 
-        self.set_throttle_100()
+        if restore_throttle:
+            self.set_throttle_100()
 
-        return
+        return True
 
     def have_destination(self, scr_reg) -> bool:
         """
@@ -2320,7 +2326,8 @@ class EDAutopilot:
             # 100% throttle. Without it we turn back towards the target (often near the
             # star) far too close to it and fly into the star.
             sleep(float(self.config['Wait_HeatDissipate']))
-        elif self.config["ElwScannerEnable"]:
+        elif self.config["ElwScannerEnable"] and not self._elw_scanned_this_system:
+            # Not scanned during the refuel stop - stop and scan here
             self.fss_detect_elw(scr_reg)
             if self.config["EnableRandomness"]:
                 sleep(random.randint(0, 3))
@@ -2400,6 +2407,9 @@ class EDAutopilot:
                 self.edsm_info = self.locale_safe('EDSM_CHECKING', 'EDSM: checking...')
                 threading.Thread(target=self.edsm_check_system,
                                  args=(self.jn.ship_state()['location'],), daemon=True).start()
+
+            # New system - the ELW scan has not run here yet
+            self._elw_scanned_this_system = False
 
             # Start SCO monitoring ready when we drop back to SC.
             self.start_sco_monitoring()
@@ -2606,6 +2616,12 @@ class EDAutopilot:
         logger.debug('refuel=refueling')
         self.ap_ckb('log+vce', 'Refueling')
         self.update_ap_status("Refueling")
+
+        # The ship is stopped while scooping - the perfect moment to run the FSS/ELW scan
+        # instead of stopping again later in position() (saves an accelerate-brake cycle).
+        if self.config["ElwScannerEnable"] and not self.config.get('FastTravelMode', False):
+            if self.fss_detect_elw(scr_reg, restore_throttle=False):
+                self._elw_scanned_this_system = True
 
         # We started fueling, so lets give it another timeout period to fuel up
         startime = time.time()
