@@ -58,6 +58,9 @@ class MachLearn:
         if results and len(results) == 1:
             r = results[0]
             if len(r.boxes) > 0:
+                # Keep only the highest confidence match per class, otherwise a weak false
+                # positive can replace the real detection.
+                best: dict[str, MachLearnMatch] = {}
                 for b in r.boxes:
                     clsid = int(b.cls.item())
                     name = r.names[clsid]  # Class name
@@ -68,9 +71,9 @@ class MachLearn:
                         rect_tmp = rect_tmp[0]
                         res_quad = Quad.from_rect(rect_tmp)
 
-                        # Add item
-                        match = MachLearnMatch(class_name=name, match_pct=confidence, bounding_quad=res_quad)
-                        matches.append(match)
+                        if name not in best or confidence > best[name].match_pct:
+                            best[name] = MachLearnMatch(class_name=name, match_pct=confidence, bounding_quad=res_quad)
+                matches = list(best.values())
                 return matches
             else:
                 return None

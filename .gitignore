@@ -24,3 +24,19 @@ configs/ship_configs.json
 test/match/
 debug-output/
 runs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Python caches (anywhere)
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# Local launchers / IDE
+run.bat
+.vscode/

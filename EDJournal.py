@@ -264,6 +264,20 @@ class EDJournal:
     def get_file_modified_time(self) -> float:
         return os.path.getmtime(self.current_log)
 
+    def get_game_language(self) -> str:
+        """ Returns the actual game language from the journal Fileheader (i.e. 'Russian/RU'),
+        or '' if it could not be determined. Unlike the player settings file, this reflects
+        the language the current game session really runs in (incl. launcher-set language). """
+        try:
+            with open(self.current_log, encoding="utf-8") as f:
+                first_line = f.readline()
+            entry = json.loads(first_line)
+            if entry.get('event') == 'Fileheader':
+                return entry.get('language', '')
+            return ''
+        except Exception:
+            return ''
+
     # these items do not have respective log entries to clear them.  After initial reading of log file, clear these items
     # also the App will need to reset these to False after detecting they were True    
     def reset_items(self):

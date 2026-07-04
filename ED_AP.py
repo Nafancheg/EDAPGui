@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
+import threading
 import traceback
+import urllib.parse
+import urllib.request
 from math import atan, degrees, tan, radians
 import random
 from string import Formatter
@@ -61,6 +65,7 @@ class ScTargetAlignReturn(Enum):
     Lost = 1
     Found = 2
     Disengage = 3
+    Overheat = 4
 
 
 class FSDAssistReturn(Enum):
@@ -163,12 +168,26 @@ class EDAutopilot:
             self.hor_fov = round(self.ver_fov * self.scr.aspect_ratio, 4)
             logger.debug(f'Horizontal FOV: {self.hor_fov} deg (-{self.hor_fov / 2} to {self.hor_fov / 2}).')
 
-        self.player_settings = EDPlayerSettings(cb)
+        self.player_settings = EDPlayerSettings(cb, locale=self.locale)
 
         self.templ = Image_Templates.Image_Templates(self.scr.scaleX, self.scr.scaleY)
         self.scrReg = Screen_Regions.Screen_Regions(self.scr, self.templ)
         self.jn = EDJournal(cb)
-        self.keys = EDKeys(cb)
+
+        # Check the actual game session language (journal Fileheader) against the language
+        # the active locale's OCR strings are written for.
+        game_language = self.jn.get_game_language().split('/')[0]  # 'Russian/RU' -> 'Russian'
+        expected_language = self.locale_safe('OCR_GAME_LANGUAGE', 'English')
+        if game_language and game_language != expected_language:
+            msg = self.locale_safe(
+                'LOG_ED_LANGUAGE_MISMATCH',
+                "ED interface language is '{game}', but the selected EDAP locale expects '{expected}' for"
+                " screen text recognition (OCR). Set the game language to '{expected}' or switch the EDAP"
+                " language.").format(game=game_language, expected=expected_language)
+            cb('log', f"WARNING: {msg}")
+            logger.warning(f"WARNING: {msg}")
+
+        self.keys = EDKeys(cb, locale=self.locale)
         self.afk_combat = AFK_Combat(self, self.keys, self.jn, self.vce)
         self.waypoint = EDWayPoint(self, cb, self.jn.ship_state()['odyssey'])
         self.robigo = Robigo(self)
@@ -215,7 +234,9 @@ class EDAutopilot:
 
         # Overlay vars
         self.ap_state = "Idle"
-        self.fss_detected = "nothing found"
+        self.fss_detected = self.locale_safe('ELW_NOTHING_FOUND', 'nothing found')
+        self.edsm_info = ""
+        self.edsm_undiscovered = False
 
         # Initialize the Overlay class
         self.overlay = Overlay("", elite=1)
@@ -281,6 +302,13 @@ class EDAutopilot:
         if not self._fss_screen:
             self._fss_screen = EDFSS(self, self.ap_ckb)
         return self._fss_screen
+
+    def locale_safe(self, key: str, default: str) -> str:
+        """ Safely looks up a locale string, falling back to default if unavailable. """
+        try:
+            return self.locale[key]
+        except Exception:
+            return default
 
     def update_config(self):
         # Get values from classes
@@ -362,12 +390,24 @@ class EDAutopilot:
             "DisengageUseMatch": False,  # For 'Disengage' use old image match instead of OCR
             "target_align_outer_lim": 1.0,  # For test
             "target_align_inner_lim": 0.5,  # For test
+            "jump_align_outer_lim": 3.0,  # In deg. Alignment tolerance before an FSD jump (FSD self-corrects within its cone)
+            "jump_align_inner_lim": 2.0,  # In deg. Stop aligning for an FSD jump when within this range
+            "EDSMCheckEnable": True,  # Query EDSM after each jump for system discovery status (shown in overlay)
+            "FastTravelMode": False,  # Skip honk/FSS scans and extra waits to travel as fast as possible
             "Debug_ShowCompassOverlay": False,  # For test
             "Debug_ShowTargetOverlay": False,  # For test
             "GalMap_SystemSelectDelay": 0.5,  # Delay selecting the system when in galaxy map
             "PlanetDepartureSCOTime": 5.0,  # SCO boost time when leaving planet in secs
             "FleetCarrierMonitorCAPIDataPath": "",  # EDMC Fleet Carrier Monitor plugin data export path
             "AutoTuneRPYRates": False,  # Enable auto-tune for RPY rates.
+            "Wait_FSSDetect": 2.5,  # Wait after entering FSS before capturing the screen for ELW detection
+            "Wait_DockApproach": 12.0,  # Time at 50% throttle to get within 7.5km of the station before requesting docking
+            "Wait_ShipStop": 3.0,  # Wait for the ship to come to a stop after setting throttle to 0
+            "Wait_OccludedReposition": 15.0,  # Time at 100% throttle to fly clear when target is occluded
+            "Wait_DSSScan": 7.0,  # Time to hold the DSS (honk) button, scan takes roughly 6 seconds
+            "Wait_PastSun": 12.0,  # Time at 100% throttle to get away from the sun after a jump
+            "Wait_HeatDissipate": 5.0,  # Extra time to let heat dissipate before using FSD (when FSS is disabled)
+            "Wait_AfterJump": 1.0,  # Wait after a jump completes to allow graphics to stabilize and accept inputs
         }
         # NOTE!!! When adding a new config value above, add the same after read_config() to set
         # a default value or an error will occur reading the new value!
@@ -424,6 +464,14 @@ class EDAutopilot:
                 cnf['target_align_outer_lim'] = 1.0  # For test
             if 'target_align_inner_lim' not in cnf:
                 cnf['target_align_inner_lim'] = 0.5  # For test
+            if 'jump_align_outer_lim' not in cnf:
+                cnf['jump_align_outer_lim'] = 3.0
+            if 'jump_align_inner_lim' not in cnf:
+                cnf['jump_align_inner_lim'] = 2.0
+            if 'EDSMCheckEnable' not in cnf:
+                cnf['EDSMCheckEnable'] = True
+            if 'FastTravelMode' not in cnf:
+                cnf['FastTravelMode'] = False
             if 'Debug_ShowCompassOverlay' not in cnf:
                 cnf['Debug_ShowCompassOverlay'] = False  # For test
             if 'Debug_ShowTargetOverlay' not in cnf:
@@ -440,6 +488,22 @@ class EDAutopilot:
                 cnf['FleetCarrierMonitorCAPIDataPath'] = ""
             if 'AutoTuneRPYRates' not in cnf:
                 cnf['AutoTuneRPYRates'] = ""
+            if 'Wait_FSSDetect' not in cnf:
+                cnf['Wait_FSSDetect'] = 2.5
+            if 'Wait_DockApproach' not in cnf:
+                cnf['Wait_DockApproach'] = 12.0
+            if 'Wait_ShipStop' not in cnf:
+                cnf['Wait_ShipStop'] = 3.0
+            if 'Wait_OccludedReposition' not in cnf:
+                cnf['Wait_OccludedReposition'] = 15.0
+            if 'Wait_DSSScan' not in cnf:
+                cnf['Wait_DSSScan'] = 7.0
+            if 'Wait_PastSun' not in cnf:
+                cnf['Wait_PastSun'] = 12.0
+            if 'Wait_HeatDissipate' not in cnf:
+                cnf['Wait_HeatDissipate'] = 5.0
+            if 'Wait_AfterJump' not in cnf:
+                cnf['Wait_AfterJump'] = 1.0
             self.config = cnf
             logger.debug("read AP json:" + str(cnf))
         else:
@@ -554,42 +618,74 @@ class EDAutopilot:
                                            "30.0": self.yawrate,
                                            "60.0": self.yawrate}
 
+    def get_status_lines(self) -> list[tuple[str, bool]]:
+        """ Build the status lines shown in the overlay and the GUI mini panel.
+        @return: A list of (text, highlight) tuples. """
+        ap_mode = "Offline"
+        if self.fsd_assist_enabled:
+            ap_mode = "FSD Route Assist"
+        elif self.robigo_assist_enabled:
+            ap_mode = "Robigo Assist"
+        elif self.sc_assist_enabled:
+            ap_mode = "SC Assist"
+        elif self.waypoint_assist_enabled:
+            ap_mode = "Waypoint Assist"
+        elif self.afk_combat_assist_enabled:
+            ap_mode = "AFK Combat Assist"
+        elif self.dss_assist_enabled:
+            ap_mode = "DSS Assist"
+
+        ship_state = self.jn.ship_state()['status']
+        if ship_state is None:
+            ship_state = '<init>'
+
+        sclass = self.jn.ship_state()['star_class']
+        if sclass is None:
+            sclass = "<init>"
+
+        location = self.jn.ship_state()['location']
+        if location is None:
+            location = "<init>"
+
+        fuel = self.jn.ship_state()['fuel_percent']
+        fuel_str = f"{fuel}%" if fuel is not None else "?"
+
+        scoopable = " " + self.locale_safe('OVL_SCOOPABLE', '(scoopable)') if sclass in ['F', 'O', 'G', 'K', 'B', 'A', 'M'] else ""
+
+        target = self.jn.ship_state()['target']
+        if not target:
+            target = "-"
+        jumps_left = self.jn.ship_state()['jumps_remains']
+        target_str = target if not jumps_left else f"{target} ({jumps_left} {self.locale_safe('OVL_JUMPS_LEFT', 'jumps left')})"
+
+        lines = [
+            (self.locale_safe('OVL_AP_MODE', 'AP MODE')+": "+ap_mode, False),
+            (self.locale_safe('OVL_AP_STATUS', 'AP STATUS')+": "+self.ap_state, False),
+            (self.locale_safe('OVL_SHIP', 'SHIP')+": "+ship_state+" | "+self.locale_safe('OVL_FUEL', 'FUEL')+": "+fuel_str, False),
+            (self.locale_safe('OVL_CURRENT_SYSTEM', 'CURRENT SYSTEM')+": "+location+", "+sclass+scoopable, False),
+            (self.locale_safe('OVL_TARGET', 'TARGET')+": "+target_str, False),
+            ("{}: {} {} {} | {}: {:,.0f} ly".format(
+                self.locale_safe('OVL_JUMPS', 'JUMPS'), self.jump_cnt, self.locale_safe('OVL_OF', 'of'),
+                self.total_jumps, self.locale_safe('OVL_DIST', 'DIST'), self.total_dist_jumped), False),
+            (self.locale_safe('OVL_ETA', 'ETA (to System)')+": "+self._str_eta, False),
+        ]
+        if self.config["ElwScannerEnable"]:
+            lines.append((self.locale_safe('OVL_ELW_SCANNER', 'ELW SCANNER')+": "+self.fss_detected, False))
+        if self.edsm_info:
+            # Highlight a potentially undiscovered system
+            lines.append((self.edsm_info, self.edsm_undiscovered))
+        return lines
+
     def update_overlay(self):
         """ Draw the overlay data on the ED Window """
         if self.config['OverlayTextEnable']:
-            ap_mode = "Offline"
-            if self.fsd_assist_enabled:
-                ap_mode = "FSD Route Assist"
-            elif self.robigo_assist_enabled:
-                ap_mode = "Robigo Assist"
-            elif self.sc_assist_enabled:
-                ap_mode = "SC Assist"
-            elif self.waypoint_assist_enabled:
-                ap_mode = "Waypoint Assist"
-            elif self.afk_combat_assist_enabled:
-                ap_mode = "AFK Combat Assist"
-            elif self.dss_assist_enabled:
-                ap_mode = "DSS Assist"
-
-            ship_state = self.jn.ship_state()['status']
-            if ship_state is None:
-                ship_state = '<init>'
-
-            sclass = self.jn.ship_state()['star_class']
-            if sclass is None:
-                sclass = "<init>"
-
-            location = self.jn.ship_state()['location']
-            if location is None:
-                location = "<init>"
-            self.overlay.overlay_text('1', "AP MODE: "+ap_mode, 1, 1, (136, 53, 0), -1)
-            self.overlay.overlay_text('2', "AP STATUS: "+self.ap_state, 2, 1, (136, 53, 0), -1)
-            self.overlay.overlay_text('3', "SHIP STATUS: "+ship_state, 3, 1, (136, 53, 0), -1)
-            self.overlay.overlay_text('4', "CURRENT SYSTEM: "+location+", "+sclass, 4, 1, (136, 53, 0), -1)
-            self.overlay.overlay_text('5', "JUMPS: {} of {}".format(self.jump_cnt, self.total_jumps), 5, 1, (136, 53, 0), -1)
-            self.overlay.overlay_text('6', "ETA (to System): "+self._str_eta, 6, 1, (136, 53, 0), -1)
-            if self.config["ElwScannerEnable"]:
-                self.overlay.overlay_text('7', "ELW SCANNER: "+self.fss_detected, 7, 1, (136, 53, 0), -1)
+            lines = self.get_status_lines()
+            for i, (txt, highlight) in enumerate(lines, start=1):
+                color = (0, 180, 0) if highlight else (136, 53, 0)
+                self.overlay.overlay_text(str(i), txt, i, 1, color, -1)
+            # Clear the unused line slots (e.g. when the ELW/EDSM lines disappear)
+            for i in range(len(lines) + 1, 10):
+                self.overlay.overlay_remove_text(str(i))
             self.overlay.overlay_paint()
 
     def update_ap_status(self, txt):
@@ -788,6 +884,74 @@ class EDAutopilot:
         # reload the templates with the new (or previous value)
         self.templ.reload_templates(self.scr.scaleX, self.scr.scaleY)
 
+    def edsm_check_system(self, system_name: str):
+        """ Query EDSM online to see if the system is already discovered and what notable
+        bodies it contains. Intended to run in a background thread after each jump;
+        the result is stored in self.edsm_info and shown in the overlay. """
+        if not system_name:
+            return
+        try:
+            url = 'https://www.edsm.net/api-system-v1/bodies?systemName=' + urllib.parse.quote(system_name)
+            req = urllib.request.Request(url, headers={'User-Agent': 'EDAPGui'})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            logger.warning(f'EDSM query failed for {system_name}: {e}')
+            self.edsm_info = self.locale_safe('EDSM_QUERY_FAILED', 'EDSM: query failed')
+            return
+
+        # EDSM returns an empty response for systems it does not know about
+        if not data or not data.get('bodies'):
+            self.edsm_undiscovered = True
+            self.edsm_info = self.locale_safe('EDSM_NOT_IN_DB', 'EDSM: NOT IN DATABASE - possibly undiscovered!')
+            self.ap_ckb('log+vce', self.locale_safe(
+                'EDSM_NOT_IN_DB_VOICE', '{system} is not in EDSM. Possibly undiscovered system!').format(system=system_name))
+            self.update_overlay()
+            return
+
+        bodies = data['bodies']
+        body_count = data.get('bodyCount')
+
+        # Who discovered the main star and when
+        disc = ''
+        for b in bodies:
+            if b.get('isMainStar'):
+                d = b.get('discovery')
+                if d:
+                    disc = f", {self.locale_safe('EDSM_DISC_BY', 'disc.by')} {d.get('commander', '?')}"
+                break
+
+        # Count the notable bodies
+        elw = sum(1 for b in bodies if b.get('subType') == 'Earth-like world')
+        ww = sum(1 for b in bodies if b.get('subType') == 'Water world')
+        aw = sum(1 for b in bodies if b.get('subType') == 'Ammonia world')
+        terra = sum(1 for b in bodies if b.get('terraformingState') == 'Candidate for terraforming')
+
+        notable = ''
+        if elw:
+            notable += f' ELW:{elw}'
+        if ww:
+            notable += f' WW:{ww}'
+        if aw:
+            notable += f' AW:{aw}'
+        if terra:
+            notable += f' Terra:{terra}'
+
+        # Check if the system is only partially explored
+        partial = ''
+        if body_count is not None and body_count > len(bodies):
+            partial = f' ({body_count - len(bodies)} {self.locale_safe("EDSM_UNKNOWN", "unknown")})'
+
+        self.edsm_undiscovered = False
+        bodies_word = self.locale_safe('EDSM_BODIES', 'bodies')
+        self.edsm_info = f'EDSM: {len(bodies)} {bodies_word}{partial}{disc}{notable}'
+        if elw or ww or aw:
+            self.ap_ckb('log+vce', self.locale_safe(
+                'EDSM_NOTABLE_VOICE', '{system} has notable bodies:').format(system=system_name) + notable)
+        else:
+            self.ap_ckb('log', f'EDSM {system_name}: {len(bodies)} {bodies_word}{partial}{disc}')
+        self.update_overlay()
+
     def fss_detect_elw(self, scr_reg):
         """ Go into FSS, check to see if we have a signal waveform in the Earth, Water or Ammonia zone
         if so, announce finding and log the type of world found. """
@@ -795,17 +959,22 @@ class EDAutopilot:
         self.set_throttle_0()
         sleep(0.1)
         self.keys.send('ExplorationFSSEnter')
-        sleep(2.5)
+        sleep(float(self.config['Wait_FSSDetect']))
+
+        # Verify the FSS actually opened, otherwise we would be template matching on the cockpit view
+        # which produces false detections.
+        if self.status.get_gui_focus() != GuiFocusFSS:
+            logger.warning('fss_detect_elw: FSS did not open, skipping ELW detection')
+            self.fss_detected = self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open')
+            self.set_throttle_100()
+            return
 
         # look for a circle or signal in this region
         elw_image, (minVal, maxVal, minLoc, maxLoc), match = scr_reg.match_template_in_region('fss', 'elw')
         elw_sig_image, (minVal1, maxVal1, minLoc1, maxLoc1), match = scr_reg.match_template_in_image(elw_image, 'elw_sig')
 
-        # Scale the regions based on the target resolution.
-        region = self.fss_screen.reg['analysis']
-        img = self.ocr.capture_region_pct(region)
-
-        # Log screenshot for diagnostics/training
+        # Log screenshot of the actual detection strip for diagnostics/calibration
+        img = scr_reg.capture_region_percent(self.scr, 'fss')
         f = get_timestamped_filename(f'[fss_detect_elw] {self.jn.ship_state()["cur_star_system"]}', '', 'png')
         cv2.imwrite(f'{self.debug_image_folder}/{f}', img)
 
@@ -837,23 +1006,29 @@ class EDAutopilot:
         # if (maxVal > 0.65 or (maxVal1 > 0.60 and maxLoc1[1] < 30) ):
         # only check for single
         if maxVal1 > 0.70 and maxLoc1[1] < 30:
+            # The FSS spectral analysis bar zone order (left to right) is: Water, Earth-like, Ammonia
             if maxLoc1[0] < wid_div3:
-                sstr = "Earth"
-            elif maxLoc1[0] > (wid_div3*2):
                 sstr = "Water"
-            else:
+            elif maxLoc1[0] > (wid_div3*2):
                 sstr = "Ammonia"
+            else:
+                sstr = "Earth"
             # log the entry into the elw.txt file
             f = open("elw.txt", 'a')
             f.write(self.jn.ship_state()["location"]+", Type: "+sstr +
                     ", Probabilty: {0:3.0f}% ".format((maxVal1*100)) +
+                    ", MatchX: "+str(maxLoc1[0])+"/"+str(scr_reg.reg['fss']['width']) +
                     ", Date: "+str(datetime.now())+str("\n"))
             f.close()
-            self.vce.say(sstr+" like world detected ")
-            self.fss_detected = sstr+" like world detected "
+            type_names = {'Earth': self.locale_safe('ELW_TYPE_EARTH', 'Earth-like world'),
+                          'Water': self.locale_safe('ELW_TYPE_WATER', 'Water world'),
+                          'Ammonia': self.locale_safe('ELW_TYPE_AMMONIA', 'Ammonia world')}
+            detected_msg = self.locale_safe('ELW_DETECTED_MSG', '{type} detected').format(type=type_names[sstr])
+            self.vce.say(detected_msg)
+            self.fss_detected = detected_msg
             logger.info(sstr+" world at: "+str(self.jn.ship_state()["location"]))
         else:
-            self.fss_detected = "nothing found"
+            self.fss_detected = self.locale_safe('ELW_NOTHING_FOUND', 'nothing found')
 
         self.set_throttle_100()
 
@@ -1519,11 +1694,11 @@ class EDAutopilot:
             logger.error('In dock(), after long wait, but still not in_space')
             raise Exception('Docking failed (not in space)')
 
-        sleep(12)
+        sleep(float(self.config['Wait_DockApproach']))
         # At this point (of sleep()) we should be < 7.5km from the station.  Go 0 speed
         # if we get docking granted ED's docking computer will take over
         self.set_throttle_0(repeat=2)
-        sleep(3)  # Wait for ship to come to stop
+        sleep(float(self.config['Wait_ShipStop']))  # Wait for ship to come to stop
         self.ap_ckb('log+vce', "Initiating Docking Procedure")
         # Request docking through Nav panel.
         self.request_docking()
@@ -1539,7 +1714,7 @@ class EDAutopilot:
                     self.set_throttle_50()
                     sleep(5)
                     self.set_throttle_0(repeat=2)
-                sleep(3)  # Wait for ship to come to stop
+                sleep(float(self.config['Wait_ShipStop']))  # Wait for ship to come to stop
                 # Request docking through Nav panel.
                 self.request_docking()
                 self.set_throttle_0(repeat=2)
@@ -1624,11 +1799,25 @@ class EDAutopilot:
             sleep(self.sunpitchuptime)
         self.keys.send('PitchUpButton', state=0)
 
-        # Some ships run cool so need to pitch down a little if we are scooping
-        if scooping and self.sunpitchuptime < 0.0:
+        # Some ships run cool so need to pitch down a little if we are scooping.
+        # Never pitch back towards the star if we are already overheating.
+        if scooping and self.sunpitchuptime < 0.0 and not self.status.get_flag(FlagsOverHeating):
             self.keys.send('PitchDownButton', state=1)
             sleep(-1.0 * self.sunpitchuptime)
             self.keys.send('PitchDownButton', state=0)
+
+    def overheat_escape(self, scr_reg):
+        """ Emergency escape when overheating near a star. Pitch away from the star and
+        fly at full throttle until the ship cools down. """
+        self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_AVOID_STAR', 'Overheating, avoiding star'))
+        self.set_throttle_100()
+        self.sun_avoid(scr_reg, scooping=False)
+        # Fly away from the star until the heat drops
+        cooled = self.status.wait_for_flag_off(FlagsOverHeating, 60)
+        if not cooled:
+            logger.warning('overheat_escape: still overheating after timeout')
+        sleep(float(self.config['Wait_HeatDissipate']))
+        self.set_throttle_50()
 
     def compass_align(self, scr_reg) -> bool:
         """ Use the compass to find the nav point position when in SC or in space.  Will then perform rotation and
@@ -1644,6 +1833,11 @@ class EDAutopilot:
         # try multiple times to get aligned.  If the sun is shining on console, this it will be hard to match
         # the vehicle should be positioned with the sun below us via the sun_avoid() routine after a jump
         for ii in range(self.config['NavAlignTries']):
+            # Check for overheating - we may be pointing at the star
+            if self.status.get_flag(FlagsOverHeating):
+                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_ABORT_ALIGN', 'Overheating - aborting compass align'))
+                return False
+
             off = self.get_compass_target_offset()
             if off is None:
                 self.ap_ckb('log', 'Unable to detect compass. Rolling to new position.')
@@ -1677,7 +1871,7 @@ class EDAutopilot:
                     # Calc roll time based on nav point location
                     if off is None:
                         self.ap_ckb('log', 'Unable to detect compass.')
-                        continue
+                        break
                     if abs(off['roll']) > close and (180 - abs(off['roll']) > close):
                         # Clear the overlays before moving
                         if self.debug_overlay:
@@ -1699,7 +1893,7 @@ class EDAutopilot:
                 # Calc pitch time based on nav point location
                 if off is None:
                     self.ap_ckb('log', 'Unable to detect compass.')
-                    continue
+                    break
                 if abs(off['pit']) > close:
                     # Clear the overlays before moving
                     if self.debug_overlay:
@@ -1718,7 +1912,7 @@ class EDAutopilot:
                 # Calc yaw time based on nav point location
                 if off is None:
                     self.ap_ckb('log', 'Unable to detect compass.')
-                    continue
+                    break
                 if abs(off['yaw']) > close:
                     # Clear the overlays before moving
                     if self.debug_overlay:
@@ -1780,7 +1974,10 @@ class EDAutopilot:
         self.ap_ckb('log+vce', 'Target Align')
         for i in range(5):
             self.set_throttle_50()
-            align_res = self.sc_target_align(scr_reg)
+            # Use the wider jump limits - the FSD self-corrects within its cone, so
+            # sub-degree alignment is not needed and only causes oscillation.
+            align_res = self.sc_target_align(scr_reg, outer_lim=self.config['jump_align_outer_lim'],
+                                             inner_lim=self.config['jump_align_inner_lim'])
             if align_res == ScTargetAlignReturn.Lost:
                 self.set_throttle_50()
                 self.compass_align(scr_reg)  # Compass Align
@@ -1789,15 +1986,24 @@ class EDAutopilot:
                 self.set_throttle_100()
                 return
 
+            elif align_res == ScTargetAlignReturn.Overheat:
+                # Too close to the star - escape and cool down before trying again
+                self.overheat_escape(scr_reg)
+                self.set_throttle_50()
+                self.compass_align(scr_reg)  # Compass Align
+
             elif align_res == ScTargetAlignReturn.Disengage:
                 break
 
         logger.error('mnvr_to_target failed 5 times')
         raise Exception('mnvr_to_target failed 5 times')
 
-    def sc_target_align(self, scr_reg) -> ScTargetAlignReturn:
+    def sc_target_align(self, scr_reg, outer_lim: float | None = None,
+                        inner_lim: float | None = None) -> ScTargetAlignReturn:
         """ Align to the target, monitoring for disengage and obscured.
         @param scr_reg: The screen region class.
+        @param outer_lim: Alignment tolerance in deg that triggers alignment. None uses the configured default.
+        @param inner_lim: Alignment tolerance in deg to stop aligning at. None uses the configured default.
         @return: A string detailing the reason for the method return. Current return options:
             'lost': Lost target
             'found': Target found
@@ -1805,13 +2011,17 @@ class EDAutopilot:
         """
         target_align_compass_mult = 3  # Multiplier to close and target_align_inner_lim when using compass for align.
         target_align_pit_off = 0.25  # In deg. To keep the target above the center line (prevent it going down out of view).
+        max_occlusion_repositions = 2  # Limit repositions per align call to prevent an endless reposition loop.
+        occlusion_repositions = 0
+        align_timeout = 60.0  # In seconds. Failsafe to prevent an endless alignment loop.
+        compass_lims_applied = False  # Compass limit multiplier applied only once per align call.
 
         target_pit = target_align_pit_off
         target_yaw = 0.0
 
         # Copy locally as we will change the values
-        target_align_outer_lim = self.target_align_outer_lim
-        target_align_inner_lim = self.target_align_inner_lim
+        target_align_outer_lim = outer_lim if outer_lim is not None else self.target_align_outer_lim
+        target_align_inner_lim = inner_lim if inner_lim is not None else self.target_align_inner_lim
 
         off = None
         tar_off1: CompassTargetOffset | None = None
@@ -1821,6 +2031,11 @@ class EDAutopilot:
 
         # Try to get the target 5 times before quiting
         for i in range(5):
+            # Check for overheating - we may be pointing at the star
+            if self.status.get_flag(FlagsOverHeating):
+                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_ABORT_ALIGN', 'Overheating - aborting target align'))
+                return ScTargetAlignReturn.Overheat
+
             # Check Target and Compass
             # nav_off1 = self.get_nav_offset(scr_reg)
             tar_off1 = self.get_compass_target_offset()
@@ -1836,7 +2051,8 @@ class EDAutopilot:
                 #     self.ap_ckb('log', 'Using Compass for Target Align')
 
                 # We are using compass align, increase the values as compass is much less accurate
-                if off['used_nav']:
+                if off['used_nav'] and not compass_lims_applied:
+                    compass_lims_applied = True
                     target_align_outer_lim = target_align_outer_lim * target_align_compass_mult
                     target_align_inner_lim = target_align_inner_lim * target_align_compass_mult
                     target_align_pit_off = target_align_pit_off * target_align_compass_mult
@@ -1848,8 +2064,12 @@ class EDAutopilot:
 
                 # Check if target occluded
                 if tar_off1['tar_occ']:
-                    self.occluded_reposition(scr_reg)
-                    self.ap_ckb('log+vce', 'Target Align')
+                    if occlusion_repositions < max_occlusion_repositions:
+                        occlusion_repositions += 1
+                        self.occluded_reposition(scr_reg)
+                        self.ap_ckb('log+vce', 'Target Align')
+                    else:
+                        self.ap_ckb('log', self.locale_safe('ALIGN_STILL_OCCLUDED', 'Target still occluded, continuing align without reposition.'))
 
             # if self.is_destination_occluded(scr_reg):
             #     self.occluded_reposition(scr_reg)
@@ -1875,8 +2095,20 @@ class EDAutopilot:
             return ScTargetAlignReturn.Lost
 
         # We have Target or Compass. Are we close to Target?
+        align_start = time.time()
         while ((abs(off['yaw']) > target_align_outer_lim) or
                (abs(off['pit']) > target_align_outer_lim)):
+
+            # Failsafe timeout to prevent an endless alignment loop.
+            if (time.time() - align_start) > align_timeout:
+                logger.debug("sc_target_align timed out")
+                self.ap_ckb('log', self.locale_safe('ALIGN_TIMEOUT', 'Target Align failed - timed out.'))
+                return ScTargetAlignReturn.Lost
+
+            # Check for overheating - we may be pointing at the star
+            if self.status.get_flag(FlagsOverHeating):
+                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_ABORT_ALIGN', 'Overheating - aborting target align'))
+                return ScTargetAlignReturn.Overheat
 
             target_align_outer_lim = target_align_inner_lim  # Keep aligning until we are within this lower range.
 
@@ -1922,9 +2154,16 @@ class EDAutopilot:
             #     off = nav_off2
             #     self.ap_ckb('log', 'Using Compass for Target Align')
                 # Check if Target is now behind us
-                if tar_off2['tar_behind'] < 0:
+                if tar_off2['tar_behind']:
                     self.ap_ckb('log', 'Target is behind us')
                     return ScTargetAlignReturn.Lost
+
+                # We are using compass align, increase the values as compass is much less accurate
+                if off['used_nav'] and not compass_lims_applied:
+                    compass_lims_applied = True
+                    target_align_outer_lim = target_align_outer_lim * target_align_compass_mult
+                    target_align_inner_lim = target_align_inner_lim * target_align_compass_mult
+                    target_align_pit_off = target_align_pit_off * target_align_compass_mult
 
             if tar_off1 and tar_off2:
                 # Check diff from before and after movement
@@ -1938,8 +2177,12 @@ class EDAutopilot:
 
             # Check if target occluded
             if tar_off2 and tar_off2['tar_occ']:
-                self.occluded_reposition(scr_reg)
-                self.ap_ckb('log+vce', 'Target Align')
+                if occlusion_repositions < max_occlusion_repositions:
+                    occlusion_repositions += 1
+                    self.occluded_reposition(scr_reg)
+                    self.ap_ckb('log+vce', 'Target Align')
+                else:
+                    self.ap_ckb('log', self.locale_safe('ALIGN_STILL_OCCLUDED', 'Target still occluded, continuing align without reposition.'))
 
             # if self.is_destination_occluded(scr_reg):
             #     self.occluded_reposition(scr_reg)
@@ -1984,7 +2227,7 @@ class EDAutopilot:
 
         # Speed away
         self.set_throttle_100()
-        sleep(15)
+        sleep(float(self.config['Wait_OccludedReposition']))
 
         self.set_throttle_0()
         self.ship_control.pitch_up_down(90)
@@ -2002,7 +2245,7 @@ class EDAutopilot:
                 logger.debug('position=scanning')
                 self.keys.send('SecondaryFire', state=1)
 
-            sleep(7)  # roughly 6 seconds for DSS
+            sleep(float(self.config['Wait_DSSScan']))  # roughly 6 seconds for DSS
 
             # stop pressing the Scanner button
             if self.config['DSSButton'] == 'Primary':
@@ -2039,7 +2282,7 @@ class EDAutopilot:
         @return:
         """
         logger.debug('position')
-        add_time = 12
+        add_time = float(self.config['Wait_PastSun'])
 
         self.set_throttle_100()
 
@@ -2050,15 +2293,29 @@ class EDAutopilot:
         if self.config["EnableRandomness"]:
             pause_time = pause_time+random.randint(0, 3)
         # need time to get away from the Sun so heat will dissipate before we use FSD
-        sleep(pause_time)
+        pitched_away = False
+        endtime = time.time() + pause_time
+        while time.time() < endtime:
+            sleep(0.5)
+            # If we are heating up we are too close to the star - pitch further away from it
+            if not pitched_away and self.status.get_flag(FlagsOverHeating):
+                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_PITCH_AWAY', 'Overheating, pitching away from star'))
+                self.sun_avoid(scr_reg, scooping=False)
+                self.ship_control.pitch_up_down(20)
+                pitched_away = True
 
-        if self.config["ElwScannerEnable"]:
+        fast_travel = self.config.get('FastTravelMode', False)
+        if fast_travel:
+            # Fast Travel - no scanning. Only wait for heat to dissipate if we are actually hot.
+            if self.status.get_flag(FlagsOverHeating):
+                sleep(float(self.config['Wait_HeatDissipate']))
+        elif self.config["ElwScannerEnable"]:
             self.fss_detect_elw(scr_reg)
             if self.config["EnableRandomness"]:
                 sleep(random.randint(0, 3))
             sleep(3)
         else:
-            sleep(5)  # since not doing FSS, need to give a little more time to get away from Sun, for heat
+            sleep(float(self.config['Wait_HeatDissipate']))  # since not doing FSS, need to give a little more time to get away from Sun, for heat
 
         self.vce.say("Maneuvering")
 
@@ -2113,8 +2370,15 @@ class EDAutopilot:
             logger.debug('jump= speed 0')
             self.jump_cnt = self.jump_cnt+1
             self.set_throttle_0(repeat=3)  # Let's be triply sure that we set speed to 0% :)
-            sleep(1)  # wait 1 sec after jump to allow graphics to stablize and accept inputs
+            sleep(float(self.config['Wait_AfterJump']))  # wait after jump to allow graphics to stablize and accept inputs
             logger.debug('jump=complete')
+
+            # Check EDSM online for the discovery status of this system in the background
+            if self.config.get('EDSMCheckEnable', True):
+                self.edsm_undiscovered = False
+                self.edsm_info = self.locale_safe('EDSM_CHECKING', 'EDSM: checking...')
+                threading.Thread(target=self.edsm_check_system,
+                                 args=(self.jn.ship_state()['location'],), daemon=True).start()
 
             # Start SCO monitoring ready when we drop back to SC.
             self.start_sco_monitoring()
@@ -2284,7 +2548,14 @@ class EDAutopilot:
 
         # mnvr into position
         self.set_throttle_100()
-        sleep(5)
+        endtime = time.time() + 5
+        while time.time() < endtime:
+            sleep(0.25)
+            # Abort the approach if we start overheating - we are too close to the star
+            if self.status.get_flag(FlagsOverHeating):
+                self.vce.say(self.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
+                self.overheat_escape(scr_reg)
+                return False
         self.set_throttle_50()
         sleep(1.7)
         self.set_throttle_0(repeat=3)
@@ -2300,6 +2571,12 @@ class EDAutopilot:
             if interdicted:
                 # Continue journey after interdiction
                 self.set_throttle_0()
+
+            # Abort scooping if we are overheating
+            if self.status.get_flag(FlagsOverHeating):
+                self.vce.say(self.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
+                self.overheat_escape(scr_reg)
+                return False
 
             if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
                 self.vce.say("Refueling abort, insufficient scooping")
@@ -2317,6 +2594,12 @@ class EDAutopilot:
             if interdicted:
                 # Continue journey after interdiction
                 self.set_throttle_0()
+
+            # Stop scooping if we are overheating - keep whatever fuel we got
+            if self.status.get_flag(FlagsOverHeating):
+                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_STOP_REFUEL', 'Overheating - stopping refuel'))
+                self.overheat_escape(scr_reg)
+                return True
 
             if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
                 self.vce.say("Refueling abort, insufficient scooping")
@@ -2611,9 +2894,10 @@ class EDAutopilot:
                             "  Fu#: "+str(self.refuel_cnt) + " ETA: "+self._str_eta)
                 self.ap_ckb('log', 'ETA (to System): '+self._str_eta)
 
-                # Do the Discovery Scan (Honk)
-                self.honk_thread = threading.Thread(target=self.honk, daemon=True)
-                self.honk_thread.start()
+                # Do the Discovery Scan (Honk). Skipped in Fast Travel mode.
+                if not self.config.get('FastTravelMode', False):
+                    self.honk_thread = threading.Thread(target=self.honk, daemon=True)
+                    self.honk_thread.start()
 
                 # Rotate destination to roughly the top if we have a destination
                 # Should make it easier to get to the destination the other side of the star
@@ -2703,6 +2987,12 @@ class EDAutopilot:
 
                 elif align_res == ScTargetAlignReturn.Found:
                     pass
+
+                elif align_res == ScTargetAlignReturn.Overheat:
+                    # Too close to the star - escape and cool down before trying again
+                    self.overheat_escape(scr_reg)
+                    self.set_throttle_50()
+                    self.compass_align(scr_reg)  # Compass Align
 
                 elif align_res == ScTargetAlignReturn.Disengage:
                     break

@@ -9,8 +9,17 @@ from EDlogger import logger
 class EDPlayerSettings:
     """ Handles the Player settings (Custom.4.3.misc) XML file. """
 
-    def __init__(self, cb, display_file_path=None):
+    def t(self, key: str, default: str) -> str:
+        if self.locale is None:
+            return default
+        try:
+            return self.locale[key]
+        except Exception:
+            return default
+
+    def __init__(self, cb, display_file_path=None, locale=None):
         self.ap_ckb = cb
+        self.locale = locale
         self.dashboard_gui_brightness = '' # GUI brightness ('0.0' to '1.0')
         self.hide_location_icons = '' # Hide icons in nav panel ('0'=Don't hide, '1'=Hide)
         self.language = '' # Language ('English' etc.)
@@ -44,16 +53,29 @@ class EDPlayerSettings:
 
         # Check settings...
         if float(self.dashboard_gui_brightness) < 1.0:
-            self.ap_ckb('log', f"WARNING: Consider changing setting 'Interface Brightness' to maximum in 'R Panel > Ship > Pilot Preferences'.")
-            logger.warning("Consider changing setting 'Interface Brightness' to maximum in 'R Panel > Ship > Pilot Preferences'.")
+            msg = self.t('LOG_INTERFACE_BRIGHTNESS',
+                         "Consider changing setting 'Interface Brightness' to maximum in 'R Panel > Ship > Pilot Preferences'.")
+            self.ap_ckb('log', f"WARNING: {msg}")
+            logger.warning(msg)
 
         if int(self.hide_location_icons) == 1:
-            self.ap_ckb('log', f"WARNING: Consider changing setting 'Location Status Icons' to 'Show Icons' in 'R Panel > Ship > Pilot Preferences'.")
-            logger.warning("Consider changing setting 'Location Status Icons' to 'Show Icons' in 'R Panel > Ship > Pilot Preferences'.")
+            msg = self.t('LOG_LOCATION_STATUS_ICONS',
+                         "Consider changing setting 'Location Status Icons' to 'Show Icons' in 'R Panel > Ship > Pilot Preferences'.")
+            self.ap_ckb('log', f"WARNING: {msg}")
+            logger.warning(msg)
 
-        if self.language != 'English':
-            self.ap_ckb('log', f"WARNING: ED is not set to English language. Remember to change the language setting in ap.json.")
-            logger.warning("WARNING: ED is not set to English language. Remember to change the language setting in ap.json.")
+        # The 'Language' value in this file is only meaningful when the in-game language
+        # override is active; otherwise the game follows the launcher/OS language and the
+        # actual language is checked against the journal Fileheader (see ED_AP).
+        if int(self.language_override_active) == 1:
+            expected_language = self.t('OCR_GAME_LANGUAGE', 'English')
+            if self.language != expected_language:
+                msg = self.t('LOG_ED_LANGUAGE_MISMATCH',
+                             "ED interface language is '{game}', but the selected EDAP locale expects '{expected}' for"
+                             " screen text recognition (OCR). Set the game language to '{expected}' or switch the EDAP"
+                             " language.").format(game=self.language, expected=expected_language)
+                self.ap_ckb('log', f"WARNING: {msg}")
+                logger.warning(f"WARNING: {msg}")
 
     @staticmethod
     def read_settings(filename) -> dict:

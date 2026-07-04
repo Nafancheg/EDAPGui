@@ -189,6 +189,7 @@ class InternalWaypoints:
 class WaypointEditorTab:
     def __init__(self, parent, ed_waypoint):
         self.ed_waypoint = ed_waypoint
+        self.locale = self.ed_waypoint.ap.locale if self.ed_waypoint and self.ed_waypoint.ap else None
         self.waypoints = InternalWaypoints()
         self.gbl_shoppinglist = InternalWaypoint()
         self.frame = ttk.Frame(parent)
@@ -206,6 +207,14 @@ class WaypointEditorTab:
         # --- Waypoints Tab ---
         self.create_waypoints_tab()
 
+    def t(self, key: str, default: str) -> str:
+        if self.locale is None:
+            return default
+        try:
+            return self.locale[key]
+        except Exception:
+            return default
+
     def create_waypoints_tab(self):
         # Main container for the waypoints tab
         waypoints_container = ttk.Frame(self.frame)
@@ -214,31 +223,31 @@ class WaypointEditorTab:
         # File operations buttons
         file_ops_frame = ttk.Frame(waypoints_container)
         file_ops_frame.pack(fill="x", pady=5)
-        ttk.Button(file_ops_frame, text="New", command=self.new_file).pack(side="left", padx=2)
-        ttk.Button(file_ops_frame, text="Open", command=self.open_file).pack(side="left", padx=2)
-        btn_open_last = ttk.Button(file_ops_frame, text="Open Last Saved", command=self.open_last_file)
+        ttk.Button(file_ops_frame, text=self.t('WPT_BTN_NEW', 'New'), command=self.new_file).pack(side="left", padx=2)
+        ttk.Button(file_ops_frame, text=self.t('WPT_BTN_OPEN', 'Open'), command=self.open_file).pack(side="left", padx=2)
+        btn_open_last = ttk.Button(file_ops_frame, text=self.t('WPT_BTN_OPEN_LAST_SAVED', 'Open Last Saved'), command=self.open_last_file)
         btn_open_last.pack(side="left", padx=2)
-        tip = ToolTip(btn_open_last, msg=f"Opens the last saved waypoint file", delay=1.0, bg="#808080", fg="#FFFFFF")
+        tip = ToolTip(btn_open_last, msg=self.t('WPT_TIP_OPEN_LAST_SAVED', 'Opens the last saved waypoint file'), delay=1.0, bg="#808080", fg="#FFFFFF")
 
-        self.save_button = ttk.Button(file_ops_frame, text="Save", command=self.save_file)
+        self.save_button = ttk.Button(file_ops_frame, text=self.t('WPT_BTN_SAVE', 'Save'), command=self.save_file)
         self.save_button.pack(side="left", padx=2)
         self.save_button.config(state="disabled")
-        ttk.Button(file_ops_frame, text="Save As", command=self.save_as_file).pack(side="left", padx=2)
-        btn_reset_list = ttk.Button(file_ops_frame, text="Reset List", command=self.reset_wp_file)
+        ttk.Button(file_ops_frame, text=self.t('WPT_BTN_SAVE_AS', 'Save As'), command=self.save_as_file).pack(side="left", padx=2)
+        btn_reset_list = ttk.Button(file_ops_frame, text=self.t('WPT_BTN_RESET_LIST', 'Reset List'), command=self.reset_wp_file)
         btn_reset_list.pack(side="left", padx=5)
-        tip = ToolTip(btn_reset_list, msg=f"Resets the Complete flag of all Waypoints and restarts at the first Waypoint", delay=1.0, bg="#808080", fg="#FFFFFF")
-        ttk.Button(file_ops_frame, text="Import Spansh CSV", command=self.import_spansh_csv).pack(side="right", padx=2)
-        ttk.Button(file_ops_frame, text="Import from Inara", command=self.open_inara_import_window).pack(side="right", padx=2)
+        tip = ToolTip(btn_reset_list, msg=self.t('WPT_TIP_RESET_LIST', 'Resets the Complete flag of all Waypoints and restarts at the first Waypoint'), delay=1.0, bg="#808080", fg="#FFFFFF")
+        ttk.Button(file_ops_frame, text=self.t('WPT_BTN_IMPORT_SPANSH_CSV', 'Import Spansh CSV'), command=self.import_spansh_csv).pack(side="right", padx=2)
+        ttk.Button(file_ops_frame, text=self.t('WPT_BTN_IMPORT_FROM_INARA', 'Import from Inara'), command=self.open_inara_import_window).pack(side="right", padx=2)
 
         # notebook pages
         nb = ttk.Notebook(waypoints_container)
         nb.pack(fill="both", expand=True, padx=5, pady=5)
 
         page0 = ttk.Frame(nb)
-        nb.add(page0, text="Waypoints")  # main page
+        nb.add(page0, text=self.t('WPT_TAB_WAYPOINTS', 'Waypoints'))  # main page
 
         page1 = ttk.Frame(nb)
-        nb.add(page1, text="Global Shopping List")  # options page
+        nb.add(page1, text=self.t('WPT_TAB_GLOBAL_SHOPPING_LIST', 'Global Shopping List'))  # options page
 
         # === WAYPOINT TAB ===
         # Top frame for waypoints list and buttons
@@ -249,11 +258,11 @@ class WaypointEditorTab:
         columns = ("system_name", "station_name", "skip", "completed", "comment")
         self.waypoints_tree = ttk.Treeview(top_frame, columns=columns, show="headings")
 
-        self.waypoints_tree.heading("system_name", text="System Name")
-        self.waypoints_tree.heading("station_name", text="Station Name")
-        self.waypoints_tree.heading("skip", text="Skip")
-        self.waypoints_tree.heading("completed", text="Completed")
-        self.waypoints_tree.heading("comment", text="Comment")
+        self.waypoints_tree.heading("system_name", text=self.t('WPT_COL_SYSTEM_NAME', 'System Name'))
+        self.waypoints_tree.heading("station_name", text=self.t('WPT_COL_STATION_NAME', 'Station Name'))
+        self.waypoints_tree.heading("skip", text=self.t('WPT_COL_SKIP', 'Skip'))
+        self.waypoints_tree.heading("completed", text=self.t('WPT_COL_COMPLETED', 'Completed'))
+        self.waypoints_tree.heading("comment", text=self.t('WPT_COL_COMMENT', 'Comment'))
 
         self.waypoints_tree.column("system_name", width=200)
         self.waypoints_tree.column("station_name", width=200)
@@ -271,46 +280,46 @@ class WaypointEditorTab:
         waypoint_buttons_frame = ttk.Frame(top_frame)
         waypoint_buttons_frame.pack(side="right", fill="y", padx=(5, 0))
 
-        ttk.Button(waypoint_buttons_frame, text="Up", command=self.move_waypoint_up).pack(padx=5, pady=2, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Down", command=self.move_waypoint_down).pack(padx=5, pady=2, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Add", command=self.add_waypoint).pack(padx=5, pady=2, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Del", command=self.delete_waypoint).pack(padx=5, pady=2, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Add REPEAT", command=self.add_repeat_waypoint).pack(padx=5, pady=2, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Plot to System", command=self.plot_waypoint_system).pack(padx=5, pady=20, fill="x")
-        ttk.Button(waypoint_buttons_frame, text="Plot to Station", command=self.plot_waypoint_station).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_UP', 'Up'), command=self.move_waypoint_up).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_DOWN', 'Down'), command=self.move_waypoint_down).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_ADD', 'Add'), command=self.add_waypoint).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_DEL', 'Del'), command=self.delete_waypoint).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_ADD_REPEAT', 'Add REPEAT'), command=self.add_repeat_waypoint).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_PLOT_TO_SYSTEM', 'Plot to System'), command=self.plot_waypoint_system).pack(padx=5, pady=20, fill="x")
+        ttk.Button(waypoint_buttons_frame, text=self.t('WPT_BTN_PLOT_TO_STATION', 'Plot to Station'), command=self.plot_waypoint_station).pack(padx=5, pady=2, fill="x")
 
         # Bottom frame for waypoint options and commodity lists
         bottom_frame = ttk.Frame(page0)
         bottom_frame.pack(fill="both", expand=True, pady=5)
 
         # Waypoint Options
-        waypoint_options_frame = ttk.LabelFrame(bottom_frame, text="Waypoint Options")
+        waypoint_options_frame = ttk.LabelFrame(bottom_frame, text=self.t('WPT_GROUP_WAYPOINT_OPTIONS', 'Waypoint Options'))
         waypoint_options_frame.pack(side="top", fill="x", expand=False, padx=0, pady=0)
 
         # Station Options
-        station_options_frame = ttk.LabelFrame(waypoint_options_frame, text="Station Options")
+        station_options_frame = ttk.LabelFrame(waypoint_options_frame, text=self.t('WPT_GROUP_STATION_OPTIONS', 'Station Options'))
         station_options_frame.pack(fill="x", padx=5, pady=5)
 
         # Galaxy Bookmark
-        ttk.Label(station_options_frame, text="Galaxy Bookmark Type:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        ttk.Label(station_options_frame, text=self.t('WPT_LABEL_GALAXY_BOOKMARK_TYPE', 'Galaxy Bookmark Type:')).grid(row=0, column=0, padx=5, pady=2, sticky="w")
         self.galaxy_bookmark_type_combo = ttk.Combobox(station_options_frame, values=["", "Favorite", "System", "Body", "Station", "Settlement"])
         self.galaxy_bookmark_type_combo.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
-        ttk.Label(station_options_frame, text="Galaxy Bookmark Number:").grid(row=0, column=2, padx=5, pady=2, sticky="w")
+        ttk.Label(station_options_frame, text=self.t('WPT_LABEL_GALAXY_BOOKMARK_NUMBER', 'Galaxy Bookmark Number:')).grid(row=0, column=2, padx=5, pady=2, sticky="w")
         self.galaxy_bookmark_number_entry = ttk.Entry(station_options_frame)
         self.galaxy_bookmark_number_entry.grid(row=0, column=3, padx=5, pady=2, sticky="ew")
 
         # System Bookmark
-        ttk.Label(station_options_frame, text="System Bookmark Type:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        ttk.Label(station_options_frame, text=self.t('WPT_LABEL_SYSTEM_BOOKMARK_TYPE', 'System Bookmark Type:')).grid(row=1, column=0, padx=5, pady=2, sticky="w")
         self.system_bookmark_type_combo = ttk.Combobox(station_options_frame, values=["", "Favorite", "Body", "Station", "Settlement", "Navigation Panel", "Nav Panel OCR"])
         self.system_bookmark_type_combo.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
-        ttk.Label(station_options_frame, text="System Bookmark Number:").grid(row=1, column=2, padx=5, pady=2, sticky="w")
+        ttk.Label(station_options_frame, text=self.t('WPT_LABEL_SYSTEM_BOOKMARK_NUMBER', 'System Bookmark Number:')).grid(row=1, column=2, padx=5, pady=2, sticky="w")
         self.system_bookmark_number_entry = ttk.Entry(station_options_frame)
         self.system_bookmark_number_entry.grid(row=1, column=3, padx=5, pady=2, sticky="ew")
 
         # Checkboxes
-        self.update_commodity_count_check = ttk.Checkbutton(station_options_frame, text="Update Commodity Count")
+        self.update_commodity_count_check = ttk.Checkbutton(station_options_frame, text=self.t('WPT_CHK_UPDATE_COMMODITY_COUNT', 'Update Commodity Count'))
         self.update_commodity_count_check.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-        self.fleet_carrier_transfer_check = ttk.Checkbutton(station_options_frame, text="Fleet Carrier Transfer")
+        self.fleet_carrier_transfer_check = ttk.Checkbutton(station_options_frame, text=self.t('WPT_CHK_FLEET_CARRIER_TRANSFER', 'Fleet Carrier Transfer'))
         self.fleet_carrier_transfer_check.grid(row=2, column=2, columnspan=2, padx=5, pady=5, sticky="w")
 
         # --- Buy/Sell Commodities ---
@@ -318,12 +327,12 @@ class WaypointEditorTab:
         buy_sell_frame.pack(side="top", fill="both", expand=True, pady=(5,0))
 
         # Buy Commodities
-        buy_commodities_frame = ttk.LabelFrame(buy_sell_frame, text="Buy Commodities")
+        buy_commodities_frame = ttk.LabelFrame(buy_sell_frame, text=self.t('WPT_GROUP_BUY_COMMODITIES', 'Buy Commodities'))
         buy_commodities_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
         self.buy_commodities_list = self.create_commodity_list(buy_commodities_frame, "buy")
 
         # Sell Commodities
-        sell_commodities_frame = ttk.LabelFrame(buy_sell_frame, text="Sell Commodities")
+        sell_commodities_frame = ttk.LabelFrame(buy_sell_frame, text=self.t('WPT_GROUP_SELL_COMMODITIES', 'Sell Commodities'))
         sell_commodities_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
         self.sell_commodities_list = self.create_commodity_list(sell_commodities_frame, "sell")
 
@@ -333,31 +342,31 @@ class WaypointEditorTab:
         top_frame1.pack(fill="both", expand=False, pady=5)
 
         # Options
-        gbl_waypoint_options_frame = ttk.LabelFrame(top_frame1, text="Options")
+        gbl_waypoint_options_frame = ttk.LabelFrame(top_frame1, text=self.t('WPT_GROUP_OPTIONS', 'Options'))
         gbl_waypoint_options_frame.pack(side="top", fill="x", expand=False, padx=5, pady=0)
 
         # Checkboxes
-        self._gbl_update_commodity_count_check = ttk.Checkbutton(gbl_waypoint_options_frame, text="Update Commodity Count")
+        self._gbl_update_commodity_count_check = ttk.Checkbutton(gbl_waypoint_options_frame, text=self.t('WPT_CHK_UPDATE_COMMODITY_COUNT', 'Update Commodity Count'))
         self._gbl_update_commodity_count_check.grid(row=2, column=0, columnspan=1, padx=5, pady=5, sticky="w")
 
-        load_const_btn = ttk.Button(gbl_waypoint_options_frame, text="Load Construction Commodities", command=self.load_const_comm)
+        load_const_btn = ttk.Button(gbl_waypoint_options_frame, text=self.t('WPT_BTN_LOAD_CONSTRUCTION_COMMODITIES', 'Load Construction Commodities'), command=self.load_const_comm)
         load_const_btn.grid(row=2, column=1, columnspan=1, padx=5, pady=5, sticky="w")
 
         # Global Buy Commodities
-        gbl_buy_commodities_frame = ttk.LabelFrame(top_frame1, text="Global Buy Commodities")
+        gbl_buy_commodities_frame = ttk.LabelFrame(top_frame1, text=self.t('WPT_GROUP_GLOBAL_BUY_COMMODITIES', 'Global Buy Commodities'))
         gbl_buy_commodities_frame.pack(side="left", fill="both", expand=True, padx=5)
         self.gbl_buy_commodities_list = self.create_commodity_list(gbl_buy_commodities_frame, "gbl_buy")
 
     def open_inara_import_window(self):
         inara_window = tk.Toplevel(self.frame)
-        inara_window.title("Import from Inara")
+        inara_window.title(self.t('WPT_WINDOW_IMPORT_FROM_INARA', 'Import from Inara'))
         inara_window.transient(self.root)
         inara_window.grab_set()
 
         frame = ttk.Frame(inara_window)
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        ttk.Label(frame, text="Paste Inara trade route data here:").pack(anchor="w")
+        ttk.Label(frame, text=self.t('WPT_LABEL_PASTE_INARA_DATA', 'Paste Inara trade route data here:')).pack(anchor="w")
         inara_text = tk.Text(frame, height=10)
         inara_text.pack(fill="x", pady=5)
         inara_text.focus_set()
@@ -366,7 +375,7 @@ class WaypointEditorTab:
             self.add_inara_route(inara_text.get("1.0", "end-1c"))
             inara_window.destroy()
 
-        ttk.Button(frame, text="Add to Waypoints", command=on_add).pack(pady=5)
+        ttk.Button(frame, text=self.t('WPT_BTN_ADD_TO_WAYPOINTS', 'Add to Waypoints'), command=on_add).pack(pady=5)
 
     def create_commodity_list(self, parent, list_type):
         frame = ttk.Frame(parent)
@@ -374,11 +383,11 @@ class WaypointEditorTab:
 
         columns = ("name", "quantity", "add_sub")
         tree = ttk.Treeview(frame, columns=columns, show="headings")
-        tree.heading("name", text="Name")
+        tree.heading("name", text=self.t('WPT_COL_NAME', 'Name'))
         tree.column("name", width=150)
-        tree.heading("quantity", text="Quantity")
+        tree.heading("quantity", text=self.t('WPT_COL_QUANTITY', 'Quantity'))
         tree.column("quantity", width=70, anchor=tk.W)
-        tree.heading("add_sub", text="Add/Sub")
+        tree.heading("add_sub", text=self.t('WPT_COL_ADD_SUB', 'Add/Sub'))
         tree.column("add_sub", width=70, anchor=tk.W)
         tree.pack(side="left", fill="both", expand=True)
 
@@ -388,21 +397,21 @@ class WaypointEditorTab:
         buttons_frame.pack(side="right", fill="y", padx=(5,0))
 
         if list_type == "buy":
-            ttk.Button(buttons_frame, text="Up", command=self.move_buy_commodity_up).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Down", command=self.move_buy_commodity_down).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Add", command=self.add_buy_commodity).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Del", command=self.delete_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_UP', 'Up'), command=self.move_buy_commodity_up).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DOWN', 'Down'), command=self.move_buy_commodity_down).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_ADD', 'Add'), command=self.add_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DEL', 'Del'), command=self.delete_buy_commodity).pack(padx=5, pady=2, fill="x")
         elif list_type == "sell":
-            ttk.Button(buttons_frame, text="Up", command=self.move_sell_commodity_up).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Down", command=self.move_sell_commodity_down).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Add", command=self.add_sell_commodity).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Del", command=self.delete_sell_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_UP', 'Up'), command=self.move_sell_commodity_up).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DOWN', 'Down'), command=self.move_sell_commodity_down).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_ADD', 'Add'), command=self.add_sell_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DEL', 'Del'), command=self.delete_sell_commodity).pack(padx=5, pady=2, fill="x")
         if list_type == "gbl_buy":
-            ttk.Button(buttons_frame, text="Up", command=self.move_gbl_buy_commodity_up).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Down", command=self.move_gbl_buy_commodity_down).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Add", command=self.add_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Del", command=self.delete_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
-            ttk.Button(buttons_frame, text="Del All", command=self.delete_all_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_UP', 'Up'), command=self.move_gbl_buy_commodity_up).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DOWN', 'Down'), command=self.move_gbl_buy_commodity_down).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_ADD', 'Add'), command=self.add_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DEL', 'Del'), command=self.delete_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text=self.t('WPT_BTN_DEL_ALL', 'Del All'), command=self.delete_all_gbl_buy_commodity).pack(padx=5, pady=2, fill="x")
 
         return tree
 
@@ -416,7 +425,7 @@ class WaypointEditorTab:
     def open_file(self):
         from tkinter import filedialog
         filepath = filedialog.askopenfilename(
-            title="Open Waypoint File",
+            title=self.t('WPT_DIALOG_OPEN_WAYPOINT_FILE', 'Open Waypoint File'),
             filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
             initialdir="./waypoints"
         )
@@ -430,13 +439,13 @@ class WaypointEditorTab:
     def reset_wp_file(self):
         if self.ed_waypoint.waypoints:
             if self.ed_waypoint.ap.waypoint_assist_enabled:
-                mb = messagebox.showwarning("Waypoint List Warning", "Disable Waypoint Assist before resetting the list.")
+                mb = messagebox.showwarning(self.t('WPT_MSG_WARNING_TITLE', 'Waypoint List Warning'), self.t('WPT_MSG_DISABLE_ASSIST_BODY', 'Disable Waypoint Assist before resetting the list.'))
             else:
-                mb = messagebox.askokcancel("Waypoint List Reset", "Resetting Waypoints will clear the Complete flag on all Waypoints and the first Waypoint will be selected as the next waypoint.")
+                mb = messagebox.askokcancel(self.t('WPT_MSG_RESET_TITLE', 'Waypoint List Reset'), self.t('WPT_MSG_RESET_BODY', 'Resetting Waypoints will clear the Complete flag on all Waypoints and the first Waypoint will be selected as the next waypoint.'))
                 if mb:
                     self.ed_waypoint.mark_all_waypoints_not_complete()
         else:
-            mb = messagebox.showwarning("Waypoint List Warning", "Waypoints list not loaded.")
+            mb = messagebox.showwarning(self.t('WPT_MSG_WARNING_TITLE', 'Waypoint List Warning'), self.t('WPT_MSG_NOT_LOADED_BODY', 'Waypoints list not loaded.'))
 
     def save_file(self):
         if self.ed_waypoint.filename:
@@ -445,7 +454,7 @@ class WaypointEditorTab:
     def save_as_file(self):
         from tkinter import filedialog
         filepath = filedialog.asksaveasfilename(
-            title="Save Waypoint File",
+            title=self.t('WPT_DIALOG_SAVE_WAYPOINT_FILE', 'Save Waypoint File'),
             filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
             initialdir="./waypoints",
             defaultextension=".json"

@@ -204,6 +204,9 @@ class EDShipControl:
                     if abs_deg > last_deg and last_val > 0.0:
                         # Extrapolate based on the last value and the value before this value
                         ratio_val = scale(abs_deg, last_deg1, last_deg, last_val1, last_val, False)
+                        if ratio_val <= 0.0:
+                            # A descending curve tail extrapolates to zero or negative - fall back to the last known rate
+                            ratio_val = last_val
                         self.ap_ckb('log', f"Roll demand: {round(deg, 1)}. Extrap value: {round(ratio_val, 2)} deg/s")
 
                         htime = abs_deg / ratio_val
@@ -231,7 +234,8 @@ class EDShipControl:
                 # Add angle and time to curve
                 act_ang = abs(cur_deg - off['roll'])
                 rate = act_ang / htime
-                if auto_tune:
+                if auto_tune and act_ang > 0.5 and 0.5 < rate < 200.0:
+                    # Skip implausible samples (detection noise) that would poison the curve
                     # Add a new point for the detected rate
                     self.add_to_roll_curve(act_ang, rate)
                     # Update the existing point as well
@@ -297,6 +301,9 @@ class EDShipControl:
                     if abs_deg > last_deg and last_val > 0.0:
                         # Extrapolate based on the last value and the value before this value
                         ratio_val = scale(abs_deg, last_deg1, last_deg, last_val1, last_val, False)
+                        if ratio_val <= 0.0:
+                            # A descending curve tail extrapolates to zero or negative - fall back to the last known rate
+                            ratio_val = last_val
                         self.ap_ckb('log', f"Pitch demand: {round(deg, 1)}. Extrap value: {round(ratio_val, 2)} deg/s")
 
                         htime = abs_deg / ratio_val
@@ -324,7 +331,8 @@ class EDShipControl:
                 # Add angle and time to curve
                 act_ang = abs(cur_deg - off['pit'])
                 rate = act_ang / htime
-                if auto_tune:
+                if auto_tune and act_ang > 0.5 and 0.5 < rate < 200.0:
+                    # Skip implausible samples (detection noise) that would poison the curve
                     # Add a new point for the detected rate
                     self.add_to_pitch_curve(act_ang, rate)
                     # Update the existing point as well
@@ -390,6 +398,9 @@ class EDShipControl:
                     if abs_deg > last_deg and last_val > 0.0:
                         # Extrapolate based on the last value and the value before this value
                         ratio_val = scale(abs_deg, last_deg1, last_deg, last_val1, last_val, False)
+                        if ratio_val <= 0.0:
+                            # A descending curve tail extrapolates to zero or negative - fall back to the last known rate
+                            ratio_val = last_val
                         self.ap_ckb('log', f"Yaw demand: {round(deg, 1)}. Extrap value: {round(ratio_val, 2)} deg/s")
 
                         htime = abs_deg / ratio_val
@@ -418,7 +429,8 @@ class EDShipControl:
                 # Add angle and time to curve
                 act_ang = abs(cur_deg - off['yaw'])
                 rate = act_ang / htime
-                if auto_tune:
+                if auto_tune and act_ang > 0.5 and 0.5 < rate < 200.0:
+                    # Skip implausible samples (detection noise) that would poison the curve
                     # Add a new point for the detected rate
                     self.add_to_yaw_curve(act_ang, rate)
                     # Update the existing point as well

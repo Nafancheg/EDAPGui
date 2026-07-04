@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from datetime import datetime
 from os import environ, listdir
 import os
 from os.path import getmtime, isfile, join
@@ -26,8 +28,18 @@ Constraints:  This file will use the latest modified *.binds file
 @final
 class EDKeys:
 
-    def __init__(self, cb):
+    def t(self, key: str, default: str) -> str:
+        """ Safely looks up a locale string, falling back to default if unavailable. """
+        try:
+            if self.locale is not None:
+                return self.locale[key]
+        except Exception:
+            pass
+        return default
+
+    def __init__(self, cb, locale=None):
         self.ap_ckb = cb
+        self.locale = locale
         self.key_mod_delay = 0.01  # Delay for key modifiers to ensure modifier is detected before/after the key
         self.key_def_hold_time = 0.2  # Default hold time for a key press
         self.key_repeat_delay = 0.1  # Delay between key press repeats
@@ -77,13 +89,21 @@ class EDKeys:
             'CamTranslateRight',
             'OrderAggressiveBehaviour',
         ]
-        self.keys = self.get_bindings()
-        self.bindings = self.get_bindings_dict()
-
+        self.keys = {}
+        self.bindings = {}
         self.missing_keys = []
         # We want to log the keyboard name instead of just the key number so we build a reverse dictionary
         # so we can look up the name also
         self.reversed_dict = {value: key for key, value in SCANCODE.items()}
+
+        self.reload_bindings()
+
+    def reload_bindings(self):
+        """ (Re)reads the latest .binds file from the game, refreshing the key bindings in place.
+        Safe to call at runtime; existing references to this EDKeys instance stay valid. """
+        self.keys = self.get_bindings()
+        self.bindings = self.get_bindings_dict()
+        self.missing_keys = []
 
         # dump config to log
         for key in self.keys_to_obtain:
@@ -97,42 +117,48 @@ class EDKeys:
 
                 logger.info('\tget_bindings_<{}>={} Key: <{}> Mod: <{}>'.format(key, self.keys[key], keyname, keymod))
                 if key not in self.keys:
-                    self.ap_ckb('log',
-                                f"WARNING: \tget_bindings_<{key}>= does not have a valid keyboard keybind {keyname}.")
-                    logger.warning(
-                        "\tget_bindings_<{}>= does not have a valid keyboard keybind {}".format(key, keyname).upper())
+                    msg = self.t('LOG_KEYBIND_MISSING_NAMED',
+                                 "get_bindings_<{key}>= does not have a valid keyboard keybind {keyname}."
+                                 ).format(key=key, keyname=keyname)
+                    self.ap_ckb('log', f"WARNING: \t{msg}")
+                    logger.warning(f"\t{msg}".upper())
                     self.missing_keys.append(key)
             except Exception as e:
-                self.ap_ckb('log', f"WARNING: \tget_bindings_<{key}>= does not have a valid keyboard keybind.")
-                logger.warning("\tget_bindings_<{}>= does not have a valid keyboard keybind.".format(key).upper())
+                msg = self.t('LOG_KEYBIND_MISSING',
+                             "get_bindings_<{key}>= does not have a valid keyboard keybind.").format(key=key)
+                self.ap_ckb('log', f"WARNING: \t{msg}")
+                logger.warning(f"\t{msg}".upper())
                 self.missing_keys.append(key)
 
         # Check if the hotkeys are used in ED
+        hotkey_conflict_default = ("Hotkey '{hotkey}' is used in the ED keybindings for '{binding_name}'. Recommend"
+                                   " changing in ED to another key to avoid EDAP accidentally being triggered.")
+
         binding_name = self.check_hotkey_in_bindings('Key_End')
         if binding_name != "":
-            warn_text = (f"Hotkey 'Key_End' is used in the ED keybindings for '{binding_name}'. Recommend changing in"
-                         f" ED to another key to avoid EDAP accidentally being triggered.")
+            warn_text = self.t('LOG_HOTKEY_CONFLICT', hotkey_conflict_default).format(
+                hotkey='Key_End', binding_name=binding_name)
             self.ap_ckb('log', f"WARNING: {warn_text}")
             logger.warning(f"{warn_text}")
 
         binding_name = self.check_hotkey_in_bindings('Key_Insert')
         if binding_name != "":
-            warn_text = (f"Hotkey 'Key_Insert' is used in the ED keybindings for '{binding_name}'. Recommend changing in"
-                         f" ED to another key to avoid EDAP accidentally being triggered.")
+            warn_text = self.t('LOG_HOTKEY_CONFLICT', hotkey_conflict_default).format(
+                hotkey='Key_Insert', binding_name=binding_name)
             self.ap_ckb('log', f"WARNING: {warn_text}")
             logger.warning(f"{warn_text}")
 
         binding_name = self.check_hotkey_in_bindings('Key_PageUp')
         if binding_name != "":
-            warn_text = (f"Hotkey 'Key_PageUp' is used in the ED keybindings for '{binding_name}'. Recommend changing in"
-                         f" ED to another key to avoid EDAP accidentally being triggered.")
+            warn_text = self.t('LOG_HOTKEY_CONFLICT', hotkey_conflict_default).format(
+                hotkey='Key_PageUp', binding_name=binding_name)
             self.ap_ckb('log', f"WARNING: {warn_text}")
             logger.warning(f"{warn_text}")
 
         binding_name = self.check_hotkey_in_bindings('Key_Home')
         if binding_name != "":
-            warn_text = (f"Hotkey 'Key_Home' is used in the ED keybindings for '{binding_name}'. Recommend changing in"
-                         f" ED to another key to avoid EDAP accidentally being triggered.")
+            warn_text = self.t('LOG_HOTKEY_CONFLICT', hotkey_conflict_default).format(
+                hotkey='Key_Home', binding_name=binding_name)
             self.ap_ckb('log', f"WARNING: {warn_text}")
             logger.warning(f"{warn_text}")
 
@@ -278,7 +304,9 @@ class EDKeys:
         key = self.keys.get(key_binding)
         if key is None:
             logger.warning('SEND=NONE !!!!!!!!')
-            self.ap_ckb('log', f"WARNING: Unable to retrieve keybinding for {key_binding}.")
+            self.ap_ckb('log', f"WARNING: "
+                        + self.t('LOG_KEYBIND_UNABLE_RETRIEVE',
+                                 "Unable to retrieve keybinding for {key_binding}.").format(key_binding=key_binding))
             raise Exception(
                 f"Unable to retrieve keybinding for {key_binding}. Advise user to check game settings for keyboard bindings.")
 
@@ -342,6 +370,96 @@ class EDKeys:
             ReleaseKey(binding['key'])
             for mod in binding['mods']:
                 ReleaseKey(mod)
+
+    # Keys offered for auto-assignment, in order of preference. Deliberately excludes
+    # the EDAP hotkeys (Home/Ins/PgUp/End) and anything commonly used while flying.
+    PREFERRED_ASSIGN_KEYS = [
+        'Key_F2', 'Key_F3', 'Key_F4', 'Key_F5', 'Key_F6', 'Key_F7', 'Key_F8', 'Key_F9', 'Key_F10',
+        'Key_I', 'Key_K', 'Key_6', 'Key_LeftBracket', 'Key_RightBracket', 'Key_SemiColon',
+        'Key_Comma', 'Key_Period', 'Key_Grave', 'Key_Numpad_Add', 'Key_Numpad_Subtract',
+        'Key_Numpad_Multiply', 'Key_Numpad_Divide', 'Key_Numpad_Decimal', 'Key_RightControl',
+        'Key_RightShift',
+    ]
+
+    def assign_missing_keyboard_binds(self, binds_file=None) -> dict:
+        """ Writes free keyboard keys into empty Primary/Secondary slots of the game bindings
+        file for AP actions that have no keyboard binding (joystick/HOTAS bindings are kept).
+        A timestamped backup of the .binds file is created before writing.
+        The game reads the file on startup, so ED must be restarted to pick up the changes.
+        @param binds_file: Bindings file to modify. If None, the latest .binds file is used.
+        @return: dict with 'assigned' {action: key}, 'skipped' [actions with no free slot],
+                 'backup' (backup file path or ''), 'file' (bindings file path).
+        """
+        if binds_file is None:
+            binds_file = self.get_latest_keybinds()
+        if not binds_file:
+            raise Exception("No .binds file found.")
+
+        tree = parse(binds_file)
+        root = tree.getroot()
+
+        # Collect keyboard keys already used anywhere in the bindings file
+        used_keys = set()
+        for item in root:
+            for slot in item:
+                if slot.tag in ('Primary', 'Secondary') and slot.attrib.get('Device', '').strip() == 'Keyboard':
+                    used_keys.add(slot.attrib.get('Key', ''))
+
+        pool = [k for k in self.PREFERRED_ASSIGN_KEYS if k not in used_keys and k in SCANCODE]
+
+        elems = {e.tag: e for e in root}
+        assigned: dict[str, str] = {}
+        skipped: list[str] = []
+        for action in self.keys_to_obtain:
+            elem = elems.get(action)
+            if elem is None:
+                skipped.append(action)
+                continue
+            slots = {slot.tag: slot for slot in elem if slot.tag in ('Primary', 'Secondary')}
+            if any(s.attrib.get('Device', '').strip() == 'Keyboard' for s in slots.values()):
+                continue  # already has a keyboard binding
+            # Prefer the Secondary slot (EDKeys prefers it too), fall back to a free Primary
+            free_slot = None
+            for slot_name in ('Secondary', 'Primary'):
+                slot = slots.get(slot_name)
+                if slot is not None and slot.attrib.get('Device', '').strip() == '{NoDevice}':
+                    free_slot = slot
+                    break
+            if free_slot is None or not pool:
+                skipped.append(action)
+                continue
+            key = pool.pop(0)
+            free_slot.set('Device', 'Keyboard')
+            free_slot.set('Key', key)
+            # Remove any leftover modifier of a previously cleared binding
+            for mod in list(free_slot):
+                if mod.tag == 'Modifier':
+                    free_slot.remove(mod)
+            assigned[action] = key
+
+        backup = ''
+        if assigned:
+            backup = binds_file + datetime.now().strftime('.%Y%m%d-%H%M%S.bak')
+            shutil.copy2(binds_file, backup)
+            tree.write(binds_file, encoding='utf-8', xml_declaration=True)
+            logger.info(f"Auto-assigned keyboard binds in '{binds_file}', backup: '{backup}'. "
+                        f"Assigned: {assigned}. Skipped: {skipped}.")
+            self.reload_bindings()
+
+        return {'assigned': assigned, 'skipped': skipped, 'backup': backup, 'file': binds_file}
+
+    def get_binding_display_name(self, key_binding: str) -> str:
+        """ Returns a human readable key name for a binding (i.e. 'Key_LeftShift + Key_A'),
+        or '' if the binding has no keyboard key assigned. """
+        key = self.keys.get(key_binding)
+        if key is None:
+            return ''
+        parts = [self.reversed_dict.get(mod, '?') for mod in key.get('mods', [])]
+        parts.append(self.reversed_dict.get(key['key'], '?'))
+        name = ' + '.join(parts)
+        if key.get('hold'):
+            name += ' (hold)'
+        return name.replace('Key_', '')
 
     def get_collisions(self, key_name: str) -> list[str]:
         """ Get key name collisions (keys used for more than one binding).
