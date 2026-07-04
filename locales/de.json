@@ -43,6 +43,7 @@
     "MINI_BTN_STOP": "STOPP",
     "MINI_BTN_FAST": "SCHNELL",
     "MINI_BTN_FSS": "FSS",
+    "ELW_SCANNING": "Scanne FSS-Spektrum",
     "ALIGN_STAR_AHEAD": "Stern vor dem Ziel, fliege zuerst daran vorbei",
     "JUMP_BLOCKED_STAR": "FSD vom Stern blockiert, weiche aus",
     "REFUEL_ABORT_SCOOP": "Betankung abgebrochen, kein Scooping",

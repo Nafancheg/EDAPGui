@@ -960,6 +960,7 @@ class EDAutopilot:
             must stay stopped (e.g. scanning during the fuel scooping stop).
         @return: True if the scan was performed, False if the FSS did not open. """
         # open fss
+        self.ap_ckb('log+vce', self.locale_safe('ELW_SCANNING', 'Scanning FSS spectrum'))
         self.set_throttle_0()
         sleep(0.1)
         self.keys.send('ExplorationFSSEnter')
