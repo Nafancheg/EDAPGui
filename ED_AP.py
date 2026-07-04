@@ -990,7 +990,8 @@ class EDAutopilot:
         elw_sig_image, (minVal1, maxVal1, minLoc1, maxLoc1), match = scr_reg.match_template_in_image(elw_image, 'elw_sig')
 
         # Classify by the match center. The segment covers exactly the three zones,
-        # in bar order (left to right): Water, Earth-like, Ammonia.
+        # in bar order (left to right): Earth-like, Ammonia, Water
+        # (per the community FSS spectral analysis diagram: ...Rocky Ice | ELW | AW | WW | Gas Giants).
         strip_height, strip_width = elw_image.shape[:2]
         sig_w = scr_reg.templates.template['elw_sig']['width']
         match_x = maxLoc1[0] + sig_w / 2
@@ -1021,11 +1022,11 @@ class EDAutopilot:
         # (upper half of the segment, above the ruler), then classify by zone third.
         if maxVal1 > 0.70 and maxLoc1[1] < strip_height * 0.5:
             if match_x < wid_div3:
-                sstr = "Water"
-            elif match_x > (wid_div3*2):
-                sstr = "Ammonia"
-            else:
                 sstr = "Earth"
+            elif match_x > (wid_div3*2):
+                sstr = "Water"
+            else:
+                sstr = "Ammonia"
             # log the entry into the elw.txt file
             f = open("elw.txt", 'a')
             f.write(self.jn.ship_state()["location"]+", Type: "+sstr +

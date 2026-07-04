@@ -250,7 +250,8 @@ class Calibration:
             reg = self.ocr_calibration_data[selected_region]
             rect = reg['rect']
             self.calibration_rect_label_var.set(f"[{rect[0]:.4f}, {rect[1]:.4f}, {rect[2]:.4f}, {rect[3]:.4f}]")
-            self.calibration_rect_text_var.set(f"{self.ocr_calibration_data[selected_region].get('text', '')}")
+            self.calibration_rect_text_var.set(
+                self.t(f'CAL_TEXT_{selected_region}', self.ocr_calibration_data[selected_region].get('text', '')))
             self.calibration_rect_left_var.set(str(rect[0]))
             self.calibration_rect_top_var.set(str(rect[1]))
             self.calibration_rect_right_var.set(str(rect[2]))
@@ -286,7 +287,8 @@ class Calibration:
             rect = reg['rect']
             sub_reg = self.ocr_calibration_data[selected_subregion]
             sub_rect = sub_reg['rect']
-            self.calibration_subrect_text_var.set(f"{self.ocr_calibration_data[selected_subregion].get('text', '')}")
+            self.calibration_subrect_text_var.set(
+                self.t(f'CAL_TEXT_{selected_subregion}', self.ocr_calibration_data[selected_subregion].get('text', '')))
             self.calibration_subrect_left_var.set(str(sub_rect[0]))
             self.calibration_subrect_top_var.set(str(sub_rect[1]))
             self.calibration_subrect_right_var.set(str(sub_rect[2]))
@@ -323,7 +325,8 @@ class Calibration:
             rect[3] = str_to_float(b_str)
 
             self.calibration_rect_label_var.set(f"[{rect[0]:.4f}, {rect[1]:.4f}, {rect[2]:.4f}, {rect[3]:.4f}]")
-            self.calibration_rect_text_var.set(f"{self.ocr_calibration_data[selected_region].get('text', '')}")
+            self.calibration_rect_text_var.set(
+                self.t(f'CAL_TEXT_{selected_region}', self.ocr_calibration_data[selected_region].get('text', '')))
 
             reg_f = Quad.from_rect(rect)
             self.ap.overlay.overlay_quad_pct('region select', reg_f, (0, 255, 0), 2, 15)

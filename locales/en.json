@@ -45,6 +45,7 @@
     "ALIGN_STAR_AHEAD": "Star in front of target, flying past it first",
     "JUMP_BLOCKED_STAR": "FSD blocked by the star, escaping",
     "REFUEL_ABORT_SCOOP": "Refueling abort, insufficient scooping",
+    "CAL_TEXT_EDFSS.full_panel.subregion.elw_zones": "ELW detection segment of the spectral analysis bar.\nZone order on the bar (left to right):\n  ... Rocky Ice | EARTH-LIKE | AMMONIA | WATER | Gas Giants ...\n1. Stop the ship (0% throttle) and open the FSS.\n2. Move the FSS tuning cursor along the bar and watch the signal\n   analysis label (bottom right) - it names the zone under the cursor.\n3. Set Left at the LEFT edge of the EARTH-LIKE WORLDS zone and Right\n   at the RIGHT edge of the WATER WORLDS zone. Detection divides this\n   segment into equal thirds: Earth-like | Ammonia | Water.\n4. Top/Bottom tight around the waveform: bottom on the baseline,\n   top just above the tallest signal peaks.",
 
     "INT_PNL_TAB_MODULES": "MODULES",
     "INT_PNL_TAB_FIRE_GROUPS": "FIRE GROUPS",

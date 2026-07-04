@@ -45,6 +45,7 @@
     "ALIGN_STAR_AHEAD": "Étoile devant la cible, je la contourne d'abord",
     "JUMP_BLOCKED_STAR": "FSD bloqué par l'étoile, éloignement",
     "REFUEL_ABORT_SCOOP": "Ravitaillement interrompu, pas de collecte",
+    "CAL_TEXT_EDFSS.full_panel.subregion.elw_zones": "Segment de détection ELW de la barre d'analyse spectrale.\nOrdre des zones (de gauche à droite) :\n  ... Roche-glace | TYPE TERRE | AMMONIAC | EAU | Géantes gazeuses ...\n1. Arrêtez le vaisseau (0% des gaz) et ouvrez le FSS.\n2. Déplacez le curseur du FSS et observez l'étiquette d'analyse du signal\n   (en bas à droite) : elle nomme la zone sous le curseur.\n3. Left = bord gauche de la zone TYPE TERRE, Right = bord droit de la zone\n   des MONDES AQUATIQUES. La détection divise le segment en tiers :\n   Type Terre | Ammoniac | Eau.\n4. Top/Bottom au plus près de la forme d'onde.",
 
     "INT_PNL_TAB_MODULES": "?",
     "INT_PNL_TAB_FIRE_GROUPS": "?",

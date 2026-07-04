@@ -45,6 +45,7 @@
     "ALIGN_STAR_AHEAD": "Estrella delante del objetivo, primero la rodeo",
     "JUMP_BLOCKED_STAR": "FSD bloqueado por la estrella, alejándose",
     "REFUEL_ABORT_SCOOP": "Repostaje abortado, sin recogida de combustible",
+    "CAL_TEXT_EDFSS.full_panel.subregion.elw_zones": "Segmento de detección ELW de la barra de análisis espectral.\nOrden de zonas (izquierda a derecha):\n  ... Rocoso-helado | TIPO TIERRA | AMONIACO | AGUA | Gigantes gaseosos ...\n1. Detenga la nave (0% de aceleración) y abra el FSS.\n2. Mueva el cursor del FSS y observe la etiqueta de análisis de señal\n   (abajo a la derecha): nombra la zona bajo el cursor.\n3. Left = borde izquierdo de la zona TIPO TIERRA, Right = borde derecho\n   de la zona de MUNDOS DE AGUA. La detección divide el segmento en\n   tercios: Tipo Tierra | Amoniaco | Agua.\n4. Top/Bottom ajustados a la forma de onda.",
 
     "INT_PNL_TAB_MODULES": "?",
     "INT_PNL_TAB_FIRE_GROUPS": "?",

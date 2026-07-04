@@ -458,15 +458,17 @@ def load_default_calib_data() -> dict[str, MyRegion]:
             "text": "Select the analysis display.",
             "readonly": False},
         "EDFSS.full_panel.subregion.elw_zones": {
-            "rect": [0.477, 0.761, 0.549, 0.841],
+            "rect": [0.5213, 0.761, 0.5719, 0.841],
             "text": "ELW detection segment of the spectral analysis bar.\n"
+                    "Zone order on the bar (left to right):\n"
+                    "  ... Rocky Ice | EARTH-LIKE | AMMONIA | WATER | Gas Giants ...\n"
                     "1. Stop the ship (0% throttle) and open the FSS.\n"
-                    "2. Move the FSS tuning cursor to find the zone boundaries: the rect\n"
-                    "   must span exactly from the LEFT edge of the WATER WORLDS zone to\n"
-                    "   the RIGHT edge of the AMMONIA WORLDS zone (Earth-likes in the\n"
-                    "   middle). Detection divides this segment into equal thirds:\n"
-                    "   Water | Earth-like | Ammonia.\n"
-                    "3. Top/Bottom tight around the waveform: bottom on the baseline,\n"
+                    "2. Move the FSS tuning cursor along the bar and watch the signal\n"
+                    "   analysis label (bottom right) - it names the zone under the cursor.\n"
+                    "3. Set Left at the LEFT edge of the EARTH-LIKE WORLDS zone and Right\n"
+                    "   at the RIGHT edge of the WATER WORLDS zone. Detection divides this\n"
+                    "   segment into equal thirds: Earth-like | Ammonia | Water.\n"
+                    "4. Top/Bottom tight around the waveform: bottom on the baseline,\n"
                     "   top just above the tallest signal peaks.",
             "readonly": False},
         # "EDStationServicesInShip.carrier_admin_header": {"rect": [0.4, 0.1, 0.6, 0.2]},

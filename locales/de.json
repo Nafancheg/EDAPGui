@@ -45,6 +45,7 @@
     "ALIGN_STAR_AHEAD": "Stern vor dem Ziel, fliege zuerst daran vorbei",
     "JUMP_BLOCKED_STAR": "FSD vom Stern blockiert, weiche aus",
     "REFUEL_ABORT_SCOOP": "Betankung abgebrochen, kein Scooping",
+    "CAL_TEXT_EDFSS.full_panel.subregion.elw_zones": "ELW-Erkennungssegment der Spektralanalyse-Leiste.\nZonenreihenfolge (links nach rechts):\n  ... Gestein-Eis | ERDÄHNLICH | AMMONIAK | WASSER | Gasriesen ...\n1. Schiff anhalten (0% Schub) und FSS öffnen.\n2. FSS-Cursor bewegen und die Signalanalyse-Beschriftung (unten rechts)\n   beobachten - sie benennt die Zone unter dem Cursor.\n3. Left = linke Kante der ERDÄHNLICHEN Zone, Right = rechte Kante der\n   WASSERWELTEN-Zone. Die Erkennung teilt das Segment in Drittel:\n   Erdähnlich | Ammoniak | Wasser.\n4. Top/Bottom eng um die Wellenform.",
 
     "INT_PNL_TAB_MODULES": "?",
     "INT_PNL_TAB_FIRE_GROUPS": "?",
