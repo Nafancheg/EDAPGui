@@ -9,7 +9,7 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 
 # import queue
-# import threading
+import threading
 # import kthread
 # from datetime import datetime
 # from time import sleep
@@ -785,6 +785,11 @@ class APGui:
                              relief='flat', bd=0, font=('Arial', 9, 'bold'))
         btn_stop.grid(row=0, column=3, padx=2)
         mk_toggle(4, self.t('MINI_BTN_FAST', 'FAST'), 'Fast Travel', on_color='#30c030', on_bg='#124012')
+        btn_fss = tk.Button(body, text=self.t('MINI_BTN_FSS', 'FSS'), width=5,
+                            command=self.test_fss_click, bg='#1d3a52', fg='#6fc3ff',
+                            activebackground='#2a5578', activeforeground='#9fd8ff',
+                            relief='flat', bd=0, font=('Arial', 9, 'bold'))
+        btn_fss.grid(row=0, column=5, padx=2)
 
         # Status/overlay info block, refreshed periodically
         self.mini_info = tk.Label(panel, text='', bg='#101010', fg='#e0a060',
@@ -811,6 +816,10 @@ class APGui:
         except Exception as e:
             logger.debug(f'mini panel tick failed: {e}')
         self.root.after(1000, self._mini_panel_tick)
+
+    def test_fss_click(self):
+        """ Mini panel FSS test: stop, open the FSS, run the ELW detection and report the verdict. """
+        threading.Thread(target=self.ed_ap.test_fss_scan, daemon=True).start()
 
     def t(self, key: str, default: str) -> str:
         if key is None:

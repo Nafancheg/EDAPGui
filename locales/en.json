@@ -42,6 +42,7 @@
     "GUI_BTN_MINI_PANEL": "Mini Panel (over game)",
     "MINI_BTN_STOP": "STOP",
     "MINI_BTN_FAST": "FAST",
+    "MINI_BTN_FSS": "FSS",
     "ALIGN_STAR_AHEAD": "Star in front of target, flying past it first",
     "JUMP_BLOCKED_STAR": "FSD blocked by the star, escaping",
     "REFUEL_ABORT_SCOOP": "Refueling abort, insufficient scooping",

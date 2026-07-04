@@ -1049,6 +1049,22 @@ class EDAutopilot:
 
         return True
 
+    def test_fss_scan(self):
+        """ Manual FSS/ELW scan test (mini panel button): stop the ship, open the FSS,
+        run the detection and report the verdict. Leaves the ship stopped. """
+        set_focus_elite_window()
+        sleep(0.25)
+        res = self.fss_detect_elw(self.scrReg, restore_throttle=False)
+        if not res:
+            self.ap_ckb('log+vce', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
+        else:
+            verdict = self.fss_detected
+            self.ap_ckb('log', f"FSS test: {verdict}")
+            # A successful detection has already been announced by the scan itself
+            if verdict == self.locale_safe('ELW_NOTHING_FOUND', 'nothing found'):
+                self.vce.say(verdict)
+        self.update_overlay()
+
     def have_destination(self, scr_reg) -> bool:
         """
         Check to see if the compass is on the screen.

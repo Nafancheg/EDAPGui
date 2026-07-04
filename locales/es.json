@@ -42,6 +42,7 @@
     "GUI_BTN_MINI_PANEL": "Mini panel (sobre el juego)",
     "MINI_BTN_STOP": "PARAR",
     "MINI_BTN_FAST": "RÁPIDO",
+    "MINI_BTN_FSS": "FSS",
     "ALIGN_STAR_AHEAD": "Estrella delante del objetivo, primero la rodeo",
     "JUMP_BLOCKED_STAR": "FSD bloqueado por la estrella, alejándose",
     "REFUEL_ABORT_SCOOP": "Repostaje abortado, sin recogida de combustible",
