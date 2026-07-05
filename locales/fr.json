@@ -51,6 +51,8 @@
     "AFSS_START": "Auto-FSS : capture de 3 images, ne bougez pas la caméra...",
     "AFSS_SWEEPING": "Auto-FSS : rien en vue - balayage du ciel...",
     "AFSS_SWEEP_EMPTY": "Auto-FSS : balayage du ciel terminé, aucun signal trouvé.",
+    "AFSS_TUNING": "Auto-FSS : nuage centré - réglage du récepteur...",
+    "AFSS_TUNE_FAIL": "Auto-FSS : pas de verrouillage de fréquence sur ce signal - pas de zoom.",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto-FSS : aucun signal non résolu à l'écran.",
     "AFSS_NOT_CENTERED": "Auto-FSS : impossible de centrer le signal.",

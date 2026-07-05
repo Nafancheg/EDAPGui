@@ -51,6 +51,8 @@
     "AFSS_START": "Auto FSS: capturing 3 frames, do not move the camera...",
     "AFSS_SWEEPING": "Auto FSS: nothing in view - sweeping the sky...",
     "AFSS_SWEEP_EMPTY": "Auto FSS: sky sweep finished, no signals found.",
+    "AFSS_TUNING": "Auto FSS: wisp centered - tuning the receiver...",
+    "AFSS_TUNE_FAIL": "Auto FSS: no frequency lock on this signal - not zooming.",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto FSS: no unresolved signals in view.",
     "AFSS_NOT_CENTERED": "Auto FSS: failed to center on the signal.",

@@ -51,6 +51,8 @@
     "AFSS_START": "Auto-FSS: capturando 3 fotogramas, no muevas la cámara...",
     "AFSS_SWEEPING": "Auto-FSS: nada a la vista - barriendo el cielo...",
     "AFSS_SWEEP_EMPTY": "Auto-FSS: barrido del cielo terminado, sin señales.",
+    "AFSS_TUNING": "Auto-FSS: nube centrada - ajustando el receptor...",
+    "AFSS_TUNE_FAIL": "Auto-FSS: sin bloqueo de frecuencia en esta señal - sin zoom.",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto-FSS: sin señales sin resolver a la vista.",
     "AFSS_NOT_CENTERED": "Auto-FSS: no se pudo centrar la señal.",

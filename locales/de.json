@@ -51,6 +51,8 @@
     "AFSS_START": "Auto-FSS: nehme 3 Frames auf, Kamera nicht bewegen...",
     "AFSS_SWEEPING": "Auto-FSS: nichts im Bild - suche den Himmel ab...",
     "AFSS_SWEEP_EMPTY": "Auto-FSS: Himmelssuche beendet, keine Signale gefunden.",
+    "AFSS_TUNING": "Auto-FSS: Wolke zentriert - stimme den Empfänger ab...",
+    "AFSS_TUNE_FAIL": "Auto-FSS: keine Frequenz-Rastung für dieses Signal - kein Zoom.",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto-FSS: keine unaufgelösten Signale im Bild.",
     "AFSS_NOT_CENTERED": "Auto-FSS: Signal konnte nicht zentriert werden.",

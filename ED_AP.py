@@ -1216,7 +1216,9 @@ class EDAutopilot:
                                'ExplorationFSSCameraPitchIncreaseButton',
                                'ExplorationFSSCameraPitchDecreaseButton',
                                'ExplorationFSSCameraYawIncreaseButton',
-                               'ExplorationFSSCameraYawDecreaseButton']
+                               'ExplorationFSSCameraYawDecreaseButton',
+                               'ExplorationFSSRadioTuningX_Increase',
+                               'ExplorationFSSRadioTuningX_Decrease']
 
     def auto_fss_missing_binds(self) -> list[str]:
         """ The FSS binds the auto scanner needs but which have no keyboard key in the
@@ -1538,11 +1540,12 @@ class EDAutopilot:
                 if mode == 'fine':
                     result = 'centered'
                     break
-                # Fog centered: give the chevrons a moment to materialize, then
-                # zoom into the cloud anyway
+                # Fog centered but no signal glyphs: give them a moment to materialize
+                # (scanning wave), then hand over to the radio tuner - zooming blindly
+                # into fog is pointless when the frequency is wrong
                 coarse_centered += 1
-                if coarse_centered >= 4:
-                    result = 'centered'
+                if coarse_centered >= 3:
+                    result = 'fog_centered'
                     break
                 sleep(0.6)
                 continue
@@ -1586,6 +1589,35 @@ class EDAutopilot:
         if last_annotated is not None:
             save_frame(f'last_{result}', last_annotated)
         return result
+
+    def auto_fss_tune_for_signal(self) -> bool:
+        """ Turn the radio tuner until the signal locks: with the wrong frequency a
+        centered wisp shows only fog (dashed lock circle in game), with the right one
+        the signal glyphs materialize near the center (solid circle). Sweeps the tuner
+        right first, then left across the whole band, probing after every tap.
+        @return: True when signal glyphs appeared near the screen center. """
+        steps = int(self.config.get('AutoFSSTuneSteps', 24))
+        tap = float(self.config.get('AutoFSSTuneTap', 0.08))
+
+        def probe() -> bool:
+            img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+            if img is None:
+                return False
+            blobs, _ = self.fss_find_signal_blobs(img)
+            return any(abs(b['x'] - 0.5) < 0.2 and abs(b['y'] - 0.5) < 0.2 for b in blobs)
+
+        if probe():
+            return True
+        for key, n in (('ExplorationFSSRadioTuningX_Increase', steps),
+                       ('ExplorationFSSRadioTuningX_Decrease', steps * 2)):
+            for _ in range(n):
+                if self.status.get_gui_focus() != GuiFocusFSS:
+                    return False
+                self.keys.send(key, hold=tap)
+                sleep(0.25)
+                if probe():
+                    return True
+        return False
 
     def _afss_view_has_target(self) -> bool:
         """ Quick check whether the current FSS view contains any target (signal glyphs
@@ -1679,6 +1711,7 @@ class EDAutopilot:
         success = False
         fail_msg = None
         swept = False
+        tuned = False
         step = 0
         while step < max_zoom:
             res = self.auto_fss_center_blob()
@@ -1691,6 +1724,21 @@ class EDAutopilot:
                     continue
                 fail_msg = self.locale_safe(
                     'AFSS_SWEEP_EMPTY', 'Auto FSS: sky sweep finished, no signals found.')
+                break
+            if res == 'fog_centered':
+                # Wisp centered but no signal glyphs: wrong radio frequency (dashed
+                # lock circle). Sweep the tuner and only zoom after the signal locks.
+                if tuned:
+                    fail_msg = self.locale_safe(
+                        'AFSS_TUNE_FAIL', 'Auto FSS: no frequency lock on this signal - not zooming.')
+                    break
+                tuned = True
+                self.ap_ckb('log', self.locale_safe(
+                    'AFSS_TUNING', 'Auto FSS: wisp centered - tuning the receiver...'))
+                if self.auto_fss_tune_for_signal():
+                    continue
+                fail_msg = self.locale_safe(
+                    'AFSS_TUNE_FAIL', 'Auto FSS: no frequency lock on this signal - not zooming.')
                 break
             if res == 'no_blobs':
                 if step == 0:
