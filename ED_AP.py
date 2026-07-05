@@ -1283,14 +1283,9 @@ class EDAutopilot:
         blobs.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
         return blobs, annotated
 
-    def fss_find_fog_patches(self, img, annotate_on=None):
-        """ Find wisp fog clouds - the coarse (long-range) auto-FSS targets. The signal
-        chevron glyphs only appear once the camera is already close, so from afar we
-        steer at these clouds first. The fog has the same hue/saturation as empty sky
-        and differs only by brightness, hence the adaptive threshold (sky median V + delta).
-        Calibrated on real 2560x1440 screenshots (fog V ~35-64 vs sky ~25-28).
-        @return: (patches, annotated); patches = [{'x','y','area'}] in screen fractions,
-                 sorted by distance from the screen center. """
+    def _afss_sky_mask(self, img):
+        """ Shared mask builder: HUD areas removed, bright cores (stars, captions) cut
+        out with their inner halos. Returns (bgr_img, allowed_mask, core_centers). """
         if img.shape[2] == 4:
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         h, w = img.shape[:2]
@@ -1305,12 +1300,8 @@ class EDAutopilot:
         allowed[:, :int(w * 0.055)] = 0
         allowed[:, int(w * 0.955):] = 0
 
-        # Cut out bright cores (stars, glowing captions) with their halos
         core = ((val > 235) | ((sat > 150) & (val > 180))).astype(np.uint8) * 255
         core = cv2.morphologyEx(core, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
-        # Remember the core centers: the DIM outer halo of a resolved star extends far
-        # beyond any reasonable dilation and reads as fog, so patches centered near a
-        # core are rejected later instead
         core_contours, _ = cv2.findContours(core, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         core_centers = []
         for cc in core_contours:
@@ -1321,14 +1312,13 @@ class EDAutopilot:
                 core_centers.append((m['m10'] / m['m00'] / w, m['m01'] / m['m00'] / h))
         core = cv2.dilate(core, np.ones((91, 91), np.uint8))
         allowed[core > 0] = 0
+        return img, allowed, core_centers
 
-        delta = int(self.config.get('AutoFSSFogDelta', 7))
-        sky_med = float(np.median(val[allowed > 0])) if np.any(allowed) else 26.0
-        thr = max(sky_med + delta, 32.0)
-        fog = ((val > thr) & (val < 170) & (allowed > 0)).astype(np.uint8) * 255
-
-        # Coarse scale: kill thin grid/ring lines, keep big soft clouds
-        small = cv2.resize(fog, (w // 8, h // 8), interpolation=cv2.INTER_AREA)
+    def _afss_extract_patches(self, mask, img, core_centers, annotated, tag='W', min_area=0.004):
+        """ Downscale a binary fog mask, keep big soft ROUND clouds (user heuristic:
+        all real wisp areas are almost circular), return them as target patches. """
+        h, w = mask.shape[:2]
+        small = cv2.resize(mask, (w // 8, h // 8), interpolation=cv2.INTER_AREA)
         small = cv2.GaussianBlur(small, (9, 9), 0)
         _, small = cv2.threshold(small, 110, 255, cv2.THRESH_BINARY)
         small = cv2.morphologyEx(small, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
@@ -1336,27 +1326,94 @@ class EDAutopilot:
         contours, _ = cv2.findContours(small, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         sw, sh = small.shape[1], small.shape[0]
         patches = []
-        annotated = annotate_on if annotate_on is not None else img.copy()
         for c in contours:
             a = cv2.contourArea(c) / (sw * sh)
-            # Lower cap: noise; upper cap: a scanning-wave flood covering a big part
-            # of the sky is not a steerable target
-            if a < 0.004 or a > 0.12:
+            # Lower cap: noise; upper cap: a scanning-wave flood is not a target
+            if a < min_area or a > 0.12:
+                continue
+            # Roundness: real wisp areas are almost circular; edge smears and wave
+            # bands are elongated
+            peri = cv2.arcLength(c, True)
+            circ = (4.0 * np.pi * cv2.contourArea(c) / (peri * peri)) if peri > 0 else 0.0
+            if circ < 0.62:
                 continue
             x, y, bw, bh = cv2.boundingRect(c)
             m = cv2.moments(c)
             cx = (m['m10'] / m['m00']) / sw if m['m00'] else (x + bw / 2) / sw
             cy = (m['m01'] / m['m00']) / sh if m['m00'] else (y + bh / 2) / sh
-            # Star halo, not a wisp: patch centered on a resolved star core
-            if any((cx - kx) ** 2 + (cy - ky) ** 2 <= 0.09 ** 2 for kx, ky in core_centers):
-                continue
-            patches.append({'x': cx, 'y': cy, 'area': a})
+            # Wisp anchored at a system star (its planets' signals): aim at the star
+            # point, not at the smeared halo centroid (centroid made aiming oscillate)
+            for kx, ky in core_centers:
+                if (cx - kx) ** 2 + (cy - ky) ** 2 <= 0.09 ** 2:
+                    cx, cy = kx, ky
+                    break
+            patches.append({'x': cx, 'y': cy, 'area': a, 'round': circ})
             p1 = (int(x * 8), int(y * 8))
             p2 = (int((x + bw) * 8), int((y + bh) * 8))
             cv2.rectangle(annotated, p1, p2, (255, 160, 0), 3)
-            cv2.putText(annotated, f'W{len(patches)}', (p1[0], max(20, p1[1] - 8)),
+            cv2.putText(annotated, f'{tag}{len(patches)}', (p1[0], max(20, p1[1] - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 160, 0), 2)
         patches.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
+        return patches
+
+    def fss_find_fog_patches(self, img, annotate_on=None):
+        """ Find wisp fog clouds in a single frame - the coarse (long-range) auto-FSS
+        targets. The fog has the same hue/saturation as empty sky and differs only by
+        brightness, hence the adaptive threshold (sky median V + delta). Calibrated on
+        real screenshots (fog V ~35-64 vs sky ~25-28).
+        @return: (patches, annotated); patches = [{'x','y','area'}] in screen fractions,
+                 sorted by distance from the screen center. """
+        img, allowed, core_centers = self._afss_sky_mask(img)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        val = hsv[:, :, 2]
+
+        delta = int(self.config.get('AutoFSSFogDelta', 7))
+        sky_med = float(np.median(val[allowed > 0])) if np.any(allowed) else 26.0
+        thr = max(sky_med + delta, 32.0)
+        fog = ((val > thr) & (val < 170) & (allowed > 0)).astype(np.uint8) * 255
+
+        annotated = annotate_on if annotate_on is not None else img.copy()
+        patches = self._afss_extract_patches(fog, img, core_centers, annotated, tag='W')
+        return patches, annotated
+
+    def fss_find_fog_temporal(self, frames, annotate_on=None):
+        """ Wisp detection by frame differencing over a burst of captures (user idea,
+        WoW-fishing-bot style): wisps BLINK in place as the scanning wave passes, so
+        the per-pixel brightness amplitude (max-min) over the burst spikes exactly at
+        wisp locations. Static things (stars, HUD, background nebula) cancel out, and
+        the traveling wave spreads its energy over its whole path. Catches wisps that
+        a single frame misses because of the wave anti-phase.
+        @param frames: list of frames from the same camera position.
+        @return: (patches, annotated_on_last_frame). """
+        if len(frames) < 2:
+            return [], (frames[0] if frames else None)
+        last, allowed, core_centers = self._afss_sky_mask(frames[-1])
+        vals = []
+        for f in frames:
+            if f.shape[2] == 4:
+                f = cv2.cvtColor(f, cv2.COLOR_BGRA2BGR)
+            vals.append(cv2.cvtColor(f, cv2.COLOR_BGR2HSV)[:, :, 2].astype(np.int16))
+        stack = np.stack(vals)
+        amp = (stack.max(axis=0) - stack.min(axis=0)).astype(np.uint8)
+
+        # Adaptive threshold: a wisp blinks far stronger than the traveling wave glows,
+        # so anchor the cutoff to the strongest amplitudes present in the burst
+        base_thr = int(self.config.get('AutoFSSFogAmpThreshold', 12))
+        sky_amp = amp[allowed > 0]
+        p_hi = float(np.percentile(sky_amp, 99.5)) if sky_amp.size else 0.0
+        p_mid = float(np.percentile(sky_amp, 90.0)) if sky_amp.size else 0.0
+        # Flat amplitude landscape = only the traveling wave blinked (it lights every
+        # pixel on its path equally); a wisp shows as a sharp local amplitude peak
+        if p_hi < 1.5 * max(p_mid, 1.0):
+            annotated = annotate_on if annotate_on is not None else last.copy()
+            return [], annotated
+        amp_thr = max(base_thr, 0.45 * p_hi)
+        mask = ((amp > amp_thr) & (amp < 170) & (allowed > 0)).astype(np.uint8) * 255
+
+        annotated = annotate_on if annotate_on is not None else last.copy()
+        # A blinking wisp's amplitude core is smaller than its static footprint
+        patches = self._afss_extract_patches(mask, last, core_centers, annotated,
+                                             tag='D', min_area=0.0015)
         return patches, annotated
 
     @staticmethod
@@ -1491,6 +1548,7 @@ class EDAutopilot:
         prev_mode = None
         hold_x = hold_y = 0.0
         empty_frames = 0
+        empty_imgs = []
         coarse_centered = 0
         last_aim = None
         last_annotated = None
@@ -1526,13 +1584,22 @@ class EDAutopilot:
             elif fogs:
                 cands, mode = fogs, 'coarse'
             else:
-                # Signals blink with the FSS scanning wave - be patient before giving up
+                # Signals blink with the FSS scanning wave - be patient, then run
+                # frame differencing over the collected burst: a wisp in wave
+                # anti-phase is invisible in single frames but blinks over time
                 empty_frames += 1
+                empty_imgs.append(img)
                 if empty_frames <= 3:
                     sleep(0.7)
                     continue
-                result = 'no_blobs'
-                break
+                dpatches, annotated = self.fss_find_fog_temporal(empty_imgs, annotate_on=annotated)
+                last_annotated = annotated
+                empty_imgs = []
+                empty_frames = 0
+                if not dpatches:
+                    result = 'no_blobs'
+                    break
+                cands, mode = dpatches, 'coarse'
             empty_frames = 0
 
             # Target continuity: stick to the candidate closest to the previous aim
@@ -1636,9 +1703,11 @@ class EDAutopilot:
         return False
 
     def _afss_view_has_target(self) -> bool:
-        """ Quick check whether the current FSS view contains any target (signal glyphs
-        or wisp fog). Two frames because signals blink with the scanning wave. """
-        for i in range(2):
+        """ Check whether the current FSS view contains any target: signal glyphs or
+        wisp fog in single frames, then frame differencing over the burst - wisps
+        blink with the scanning wave and can be invisible in every single frame. """
+        frames = []
+        for i in range(3):
             img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
             if img is None:
                 return False
@@ -1648,9 +1717,11 @@ class EDAutopilot:
             fogs, _ = self.fss_find_fog_patches(img, annotate_on=ann)
             if fogs:
                 return True
-            if i == 0:
-                sleep(0.7)
-        return False
+            frames.append(img)
+            if i < 2:
+                sleep(0.8)
+        patches, _ = self.fss_find_fog_temporal(frames)
+        return bool(patches)
 
     def auto_fss_sweep_to_target(self) -> bool:
         """ Sweep the FSS sky when nothing is in view: rotate the camera in ~0.7-screen
