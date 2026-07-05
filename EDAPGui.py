@@ -627,8 +627,11 @@ class APGui:
             local_hash = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, capture_output=True, text=True,
                                         check=True).stdout.strip()
 
-            # Get the commit hash of the remote repository
-            remote_hash = subprocess.run(["git", "rev-parse", "origin/HEAD"], cwd=repo_path, capture_output=True,
+            # Get the commit hash of the remote repository.
+            # Compare against the upstream of the current branch (@{u}) rather than
+            # origin/HEAD: that ref does not exist in clones where the remote was
+            # re-pointed (e.g. to a fork) and 'git remote set-head' was never run.
+            remote_hash = subprocess.run(["git", "rev-parse", "@{u}"], cwd=repo_path, capture_output=True,
                                          text=True, check=True).stdout.strip()
 
             # Compare the commit hashes
