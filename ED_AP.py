@@ -1605,10 +1605,24 @@ class EDAutopilot:
                     target = near
                 else:
                     prev_dx = prev_dy = None  # target jumped: drop stale measurements
-            last_aim = (target['x'], target['y'])
+            tx, ty = target['x'], target['y']
 
-            dx = target['x'] - 0.5
-            dy = target['y'] - 0.5
+            # The fog centroid jitters with the wave phase (the patch shape breathes),
+            # so for coarse targets average the position over a second capture
+            if mode == 'coarse':
+                sleep(0.35)
+                img2 = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+                if img2 is not None:
+                    fogs2, _ = self.fss_find_fog_patches(img2)
+                    if fogs2:
+                        near2 = min(fogs2, key=lambda b: (b['x'] - tx) ** 2 + (b['y'] - ty) ** 2)
+                        if (near2['x'] - tx) ** 2 + (near2['y'] - ty) ** 2 <= 0.15 ** 2:
+                            tx = (tx + near2['x']) / 2.0
+                            ty = (ty + near2['y']) / 2.0
+            last_aim = (tx, ty)
+
+            dx = tx - 0.5
+            dy = ty - 0.5
             tol_use = tol if mode == 'fine' else max(tol, 0.05)
             logger.info(f'afss aim iter {it} [{mode}]: dx={dx:.3f} dy={dy:.3f} '
                         f'sign=({self._afss_sign_x},{self._afss_sign_y}) '
