@@ -1398,7 +1398,16 @@ class EDAutopilot:
     def test_auto_fss_detect(self):
         """ Auto-FSS dry run (mini panel button): open the FSS if needed, detect the
         unresolved signal blobs, save an annotated debug screenshot and report the result.
-        Takes no scans and presses no zoom/camera keys - calibration aid for part B. """
+        Takes no scans and presses no zoom/camera keys - calibration aid. """
+        try:
+            self._test_auto_fss_detect()
+        except Exception as e:
+            logger.warning(f'auto fss dry run failed: {e}')
+            self.ap_ckb('log', f'Auto FSS: error - {e}')
+
+    def _test_auto_fss_detect(self):
+        self.ap_ckb('log', self.locale_safe(
+            'AFSS_START', 'Auto FSS: capturing 3 frames, do not move the camera...'))
         set_focus_elite_window()
         sleep(0.25)
 
@@ -1546,6 +1555,48 @@ class EDAutopilot:
             sleep(0.30)  # let the view settle before the next capture
         return 'failed'
 
+    def _afss_view_has_target(self) -> bool:
+        """ Quick check whether the current FSS view contains any target (signal glyphs
+        or wisp fog). Two frames because signals blink with the scanning wave. """
+        for i in range(2):
+            img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+            if img is None:
+                return False
+            blobs, ann = self.fss_find_signal_blobs(img)
+            if blobs:
+                return True
+            fogs, _ = self.fss_find_fog_patches(img, annotate_on=ann)
+            if fogs:
+                return True
+            if i == 0:
+                sleep(0.7)
+        return False
+
+    def auto_fss_sweep_to_target(self) -> bool:
+        """ Sweep the FSS sky when nothing is in view: rotate the camera in ~0.7-screen
+        yaw steps over three pitch rows (current, up, down), stopping as soon as a signal
+        or a fog cloud shows up. The sky sphere is much larger than one screen, and on
+        entering the FSS the view is often empty.
+        @return: True when a target is in view. """
+        yaw_hold = min(max(self._afss_gain_x * 0.7, 0.15), 2.5)
+        pitch_hold = min(max(self._afss_gain_y * 0.6, 0.15), 2.5)
+        yaw_steps = int(self.config.get('AutoFSSSweepYawSteps', 10))
+        row_moves = [None,
+                     ('ExplorationFSSCameraPitchIncreaseButton', pitch_hold),
+                     ('ExplorationFSSCameraPitchDecreaseButton', 2.0 * pitch_hold)]
+        for move in row_moves:
+            if move is not None:
+                self.keys.send(move[0], hold=move[1])
+                sleep(0.3)
+            for _ in range(yaw_steps):
+                if self.status.get_gui_focus() != GuiFocusFSS:
+                    return False
+                if self._afss_view_has_target():
+                    return True
+                self.keys.send('ExplorationFSSCameraYawIncreaseButton', hold=yaw_hold)
+                sleep(0.3)
+        return self._afss_view_has_target()
+
     def auto_fss_scan_nearest(self):
         """ Part B core: center the nearest unresolved signal, zoom in until the journal
         confirms a Scan event, then zoom back out. Scans ONE body per call. """
@@ -1587,8 +1638,20 @@ class EDAutopilot:
         zoomed = 0
         success = False
         fail_msg = None
-        for step in range(max_zoom):
+        swept = False
+        step = 0
+        while step < max_zoom:
             res = self.auto_fss_center_blob()
+            if res == 'no_blobs' and step == 0 and not swept:
+                # Empty view on entry - the sky sphere is much bigger than one screen
+                swept = True
+                self.ap_ckb('log', self.locale_safe(
+                    'AFSS_SWEEPING', 'Auto FSS: nothing in view - sweeping the sky...'))
+                if self.auto_fss_sweep_to_target():
+                    continue
+                fail_msg = self.locale_safe(
+                    'AFSS_SWEEP_EMPTY', 'Auto FSS: sky sweep finished, no signals found.')
+                break
             if res == 'no_blobs':
                 if step == 0:
                     fail_msg = self.locale_safe(
@@ -1601,6 +1664,7 @@ class EDAutopilot:
                 break
             self.keys.send('ExplorationFSSZoomIn')
             zoomed += 1
+            step += 1
             t_start = datetime.now()
             while (datetime.now() - t_start).total_seconds() < scan_timeout:
                 sleep(0.5)
