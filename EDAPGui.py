@@ -795,6 +795,11 @@ class APGui:
                              activebackground='#55407a', activeforeground='#cdbfff',
                              relief='flat', bd=0, font=('Arial', 9, 'bold'))
         btn_afss.grid(row=0, column=6, padx=2)
+        btn_afss1 = tk.Button(body, text=self.t('MINI_BTN_AFSS_ONE', 'SCAN1'), width=6,
+                              command=self.auto_fss_scan_one_click, bg='#52122a', fg='#ff9fc0',
+                              activebackground='#7a2040', activeforeground='#ffbfd8',
+                              relief='flat', bd=0, font=('Arial', 9, 'bold'))
+        btn_afss1.grid(row=0, column=7, padx=2)
 
         # Status/overlay info block, refreshed periodically
         self.mini_info = tk.Label(panel, text='', bg='#101010', fg='#e0a060',
@@ -828,8 +833,13 @@ class APGui:
 
     def test_auto_fss_click(self):
         """ Mini panel auto-FSS dry run: detect unresolved signal blobs in the FSS view,
-        save an annotated debug screenshot. No scanning yet (stage 2 calibration aid). """
+        save an annotated debug screenshot. No scanning (calibration aid). """
         threading.Thread(target=self.ed_ap.test_auto_fss_detect, daemon=True).start()
+
+    def auto_fss_scan_one_click(self):
+        """ Mini panel auto-FSS part B: center the nearest unresolved signal, zoom,
+        wait for the journal Scan confirmation. One body per press. """
+        threading.Thread(target=self.ed_ap.test_auto_fss_scan_one, daemon=True).start()
 
     def t(self, key: str, default: str) -> str:
         if key is None:

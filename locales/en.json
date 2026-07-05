@@ -47,6 +47,12 @@
     "MINI_BTN_AFSS": "AFSS",
     "AFSS_MISSING_BINDS": "Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.",
     "AFSS_BLOBS_FOUND": "Auto FSS test: {count} signal blobs found, screenshot: {file}",
+    "MINI_BTN_AFSS_ONE": "SCAN1",
+    "AFSS_NO_BLOBS": "Auto FSS: no unresolved signals in view.",
+    "AFSS_NOT_CENTERED": "Auto FSS: failed to center on the signal.",
+    "AFSS_SCANNED": "Auto FSS: scanned {body}.",
+    "AFSS_SCAN_TIMEOUT": "Auto FSS: zoomed but no scan registered - zooming back out.",
+    "AFSS_BUSY": "Auto FSS: already running.",
 
     "OVERHEAT_AVOID_STAR": "Overheating, avoiding star",
     "OVERHEAT_ABORT_ALIGN": "Overheating - aborting align",

@@ -240,6 +240,13 @@ class EDAutopilot:
         self.edsm_undiscovered = False
         self._elw_scanned_this_system = False
 
+        # Auto-FSS state (stage 2): learned camera direction signs and gains
+        self._afss_busy = False
+        self._afss_sign_x = 1
+        self._afss_sign_y = 1
+        self._afss_gain_x = 1.0   # key hold seconds per screen fraction of movement
+        self._afss_gain_y = 1.0
+
         # FSS scan advisor state (journal-driven, see poll_body_scans)
         self._fss_announced = None       # None => first poll seeds silently (journal replay guard)
         self._fss_pending = set()        # bodies seen once, announced on the NEXT poll
@@ -1307,6 +1314,158 @@ class EDAutopilot:
 
         if opened_here:
             self.keys.send('ExplorationFSSQuit')
+
+    # --- Auto FSS (stage 2, part B: center the camera on a blob, zoom, confirm scan) ---
+
+    def _afss_scanned_count(self) -> int:
+        bodies = self.jn.ship_state().get('scanned_bodies') or {}
+        return sum(1 for e in bodies.values() if e.get('has_scan'))
+
+    def auto_fss_center_blob(self) -> str:
+        """ Steer the FSS camera with key taps until the blob nearest to the screen center
+        sits within tolerance. The camera rate is unknown, so both the direction sign and
+        the gain (key hold seconds per screen fraction) are learned from the observed blob
+        movement between captures.
+        @return: 'centered', 'no_blobs' or 'failed'. """
+        tol = float(self.config.get('AutoFSSCenterTol', 0.02))
+        max_iters = int(self.config.get('AutoFSSMaxCenterIters', 14))
+
+        prev_dx = prev_dy = None
+        hold_x = hold_y = 0.0
+        for it in range(max_iters):
+            if self.status.get_gui_focus() != GuiFocusFSS:
+                return 'failed'
+            img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+            if img is None:
+                return 'failed'
+            blobs, annotated = self.fss_find_signal_blobs(img)
+            if self.debug_images:
+                cv2.imwrite(os.path.join(self.debug_image_folder,
+                            f'afss_center_{datetime.now().strftime("%H%M%S")}_{it}.png'), annotated)
+            if not blobs:
+                return 'no_blobs'
+            b = blobs[0]  # sorted by distance from the center
+            dx = b['x'] - 0.5
+            dy = b['y'] - 0.5
+            logger.debug(f'afss center iter {it}: dx={dx:.3f} dy={dy:.3f} '
+                         f'sign=({self._afss_sign_x},{self._afss_sign_y}) '
+                         f'gain=({self._afss_gain_x:.2f},{self._afss_gain_y:.2f})')
+            if abs(dx) <= tol and abs(dy) <= tol:
+                return 'centered'
+
+            # Learn from the previous move: flip the direction if the blob moved away,
+            # otherwise refine the gain from the actually observed movement
+            if prev_dx is not None and hold_x > 0.0:
+                moved = abs(prev_dx) - abs(dx)
+                if moved < -0.005:
+                    self._afss_sign_x = -self._afss_sign_x
+                elif moved > 0.005:
+                    self._afss_gain_x = min(max(0.7 * self._afss_gain_x + 0.3 * (hold_x / moved), 0.2), 8.0)
+            if prev_dy is not None and hold_y > 0.0:
+                moved = abs(prev_dy) - abs(dy)
+                if moved < -0.005:
+                    self._afss_sign_y = -self._afss_sign_y
+                elif moved > 0.005:
+                    self._afss_gain_y = min(max(0.7 * self._afss_gain_y + 0.3 * (hold_y / moved), 0.2), 8.0)
+
+            # One corrective move per axis per iteration
+            hold_x = hold_y = 0.0
+            if abs(dx) > tol:
+                hold_x = min(max(abs(dx) * self._afss_gain_x, 0.04), 0.5)
+                to_right = (dx > 0) if self._afss_sign_x > 0 else (dx < 0)
+                self.keys.send('ExplorationFSSCameraYawIncreaseButton' if to_right
+                               else 'ExplorationFSSCameraYawDecreaseButton', hold=hold_x)
+            if abs(dy) > tol:
+                hold_y = min(max(abs(dy) * self._afss_gain_y, 0.04), 0.5)
+                # Blob above the center (dy < 0) -> default: pitch up (increase)
+                pitch_up = (dy < 0) if self._afss_sign_y > 0 else (dy > 0)
+                self.keys.send('ExplorationFSSCameraPitchIncreaseButton' if pitch_up
+                               else 'ExplorationFSSCameraPitchDecreaseButton', hold=hold_y)
+            prev_dx, prev_dy = dx, dy
+            sleep(0.30)  # let the view settle before the next capture
+        return 'failed'
+
+    def auto_fss_scan_nearest(self):
+        """ Part B core: center the nearest unresolved signal, zoom in until the journal
+        confirms a Scan event, then zoom back out. Scans ONE body per call. """
+        missing = self.auto_fss_missing_binds()
+        if missing:
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_MISSING_BINDS',
+                'Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.').format(
+                keys=', '.join(missing)))
+            return
+
+        set_focus_elite_window()
+        sleep(0.25)
+
+        opened_here = False
+        if self.status.get_gui_focus() != GuiFocusFSS:
+            self.set_throttle_0()
+            self.keys.send('ExplorationFSSEnter')
+            sleep(float(self.config['Wait_FSSDetect']))
+            opened_here = True
+            if self.status.get_gui_focus() != GuiFocusFSS:
+                self.ap_ckb('log', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
+                return
+
+        res = self.auto_fss_center_blob()
+        if res == 'no_blobs':
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_NO_BLOBS', 'Auto FSS: no unresolved signals in view.'))
+            return
+        if res != 'centered':
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_NOT_CENTERED', 'Auto FSS: failed to center on the signal.'))
+            return
+
+        # Zoom onto the centered signal and wait for the journal to confirm the scan
+        count_before = self._afss_scanned_count()
+        names_before = set((self.jn.ship_state().get('scanned_bodies') or {}).keys())
+        max_zoom = int(self.config.get('AutoFSSMaxZoomSteps', 2))
+        scan_timeout = float(self.config.get('AutoFSSScanTimeout', 8.0))
+        zoomed = 0
+        success = False
+        for _ in range(max_zoom):
+            self.keys.send('ExplorationFSSZoomIn')
+            zoomed += 1
+            t_start = datetime.now()
+            while (datetime.now() - t_start).total_seconds() < scan_timeout:
+                sleep(0.5)
+                if self._afss_scanned_count() > count_before:
+                    success = True
+                    break
+            if success:
+                break
+
+        if success:
+            new_names = set((self.jn.ship_state().get('scanned_bodies') or {}).keys()) - names_before
+            body = ', '.join(sorted(new_names)) if new_names else '?'
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_SCANNED', 'Auto FSS: scanned {body}.').format(body=body))
+            # The scan advisor (poll_body_scans) will print the value verdict on its own
+        else:
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_SCAN_TIMEOUT', 'Auto FSS: zoomed but no scan registered - zooming back out.'))
+
+        for _ in range(zoomed):
+            self.keys.send('ExplorationFSSZoomOut')
+            sleep(0.4)
+
+    def test_auto_fss_scan_one(self):
+        """ Mini panel AFSS button (part B): scan one nearest unresolved signal.
+        Repeated presses scan the system body by body. """
+        if self._afss_busy:
+            self.ap_ckb('log', self.locale_safe('AFSS_BUSY', 'Auto FSS: already running.'))
+            return
+        self._afss_busy = True
+        try:
+            self.auto_fss_scan_nearest()
+        except Exception as e:
+            logger.warning(f'auto fss scan failed: {e}')
+            self.ap_ckb('log', f'Auto FSS: error - {e}')
+        finally:
+            self._afss_busy = False
 
     def have_destination(self, scr_reg) -> bool:
         """

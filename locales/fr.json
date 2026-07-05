@@ -47,6 +47,12 @@
     "MINI_BTN_AFSS": "AFSS",
     "AFSS_MISSING_BINDS": "Auto-FSS : aucune touche clavier pour : {keys}. Assignez-les dans les options du jeu.",
     "AFSS_BLOBS_FOUND": "Test auto-FSS : {count} signaux détectés, capture : {file}",
+    "MINI_BTN_AFSS_ONE": "SCAN1",
+    "AFSS_NO_BLOBS": "Auto-FSS : aucun signal non résolu à l'écran.",
+    "AFSS_NOT_CENTERED": "Auto-FSS : impossible de centrer le signal.",
+    "AFSS_SCANNED": "Auto-FSS : {body} scanné.",
+    "AFSS_SCAN_TIMEOUT": "Auto-FSS : zoom effectué mais aucun scan enregistré - dézoome.",
+    "AFSS_BUSY": "Auto-FSS : déjà en cours.",
 
     "OVERHEAT_AVOID_STAR": "Surchauffe, évitement de l'étoile",
     "OVERHEAT_ABORT_ALIGN": "Surchauffe - alignement interrompu",

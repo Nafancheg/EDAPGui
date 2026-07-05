@@ -47,6 +47,12 @@
     "MINI_BTN_AFSS": "АFSS",
     "AFSS_MISSING_BINDS": "Авто-FSS: нет клавиатурной клавиши для: {keys}. Назначьте их в настройках игры.",
     "AFSS_BLOBS_FOUND": "Тест авто-FSS: найдено клякс-сигналов: {count}, скриншот: {file}",
+    "MINI_BTN_AFSS_ONE": "СКАН1",
+    "AFSS_NO_BLOBS": "Авто-FSS: нерезолвленных сигналов в кадре нет.",
+    "AFSS_NOT_CENTERED": "Авто-FSS: не удалось навестись на сигнал.",
+    "AFSS_SCANNED": "Авто-FSS: просканировано {body}.",
+    "AFSS_SCAN_TIMEOUT": "Авто-FSS: зум выполнен, но скан не зафиксирован — возвращаю зум.",
+    "AFSS_BUSY": "Авто-FSS: уже выполняется.",
 
     "OVERHEAT_AVOID_STAR": "Перегрев, отворачиваю от звезды",
     "OVERHEAT_ABORT_ALIGN": "Перегрев — прерываю наведение",

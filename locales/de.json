@@ -47,6 +47,12 @@
     "MINI_BTN_AFSS": "AFSS",
     "AFSS_MISSING_BINDS": "Auto-FSS: keine Tastaturtaste für: {keys}. In den Spieleinstellungen belegen.",
     "AFSS_BLOBS_FOUND": "Auto-FSS-Test: {count} Signal-Blobs gefunden, Screenshot: {file}",
+    "MINI_BTN_AFSS_ONE": "SCAN1",
+    "AFSS_NO_BLOBS": "Auto-FSS: keine unaufgelösten Signale im Bild.",
+    "AFSS_NOT_CENTERED": "Auto-FSS: Signal konnte nicht zentriert werden.",
+    "AFSS_SCANNED": "Auto-FSS: {body} gescannt.",
+    "AFSS_SCAN_TIMEOUT": "Auto-FSS: gezoomt, aber kein Scan registriert - zoome zurück.",
+    "AFSS_BUSY": "Auto-FSS: läuft bereits.",
 
     "OVERHEAT_AVOID_STAR": "Überhitzung, weiche dem Stern aus",
     "OVERHEAT_ABORT_ALIGN": "Überhitzung - Ausrichtung abgebrochen",
