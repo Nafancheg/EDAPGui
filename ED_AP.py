@@ -1281,6 +1281,43 @@ class EDAutopilot:
         blobs.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
         return blobs, annotated
 
+    @staticmethod
+    def _afss_merge_blobs(all_blobs, radius=0.03):
+        """ Union blob detections from several frames: entries closer than @radius are
+        considered the same signal (keep the strongest support). """
+        merged = []
+        for b in all_blobs:
+            for m in merged:
+                if (b['x'] - m['x']) ** 2 + (b['y'] - m['y']) ** 2 <= radius * radius:
+                    if b.get('support', 0) > m.get('support', 0):
+                        m.update(b)
+                    break
+            else:
+                merged.append(dict(b))
+        merged.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
+        return merged
+
+    def fss_detect_blobs_multi(self, frames: int = 3, delay: float = 0.7):
+        """ Detect signals over several frames and union the results: the FSS scanning
+        wave makes signals blink, so a single frame can miss them.
+        @return: (merged_blobs, annotated_last_frame) or (None, None) on capture failure. """
+        all_blobs = []
+        annotated = None
+        for i in range(frames):
+            img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
+            if img is None:
+                return None, None
+            blobs, annotated = self.fss_find_signal_blobs(img)
+            all_blobs.extend(blobs)
+            if i < frames - 1:
+                sleep(delay)
+        merged = self._afss_merge_blobs(all_blobs)
+        # Mark the merged (cross-frame) detections on the last frame with circles
+        h, w = annotated.shape[:2]
+        for i, b in enumerate(merged, start=1):
+            cv2.circle(annotated, (int(b['x'] * w), int(b['y'] * h)), 34, (0, 255, 255), 2)
+        return merged, annotated
+
     def test_auto_fss_detect(self):
         """ Auto-FSS dry run (mini panel button): open the FSS if needed, detect the
         unresolved signal blobs, save an annotated debug screenshot and report the result.
@@ -1306,11 +1343,10 @@ class EDAutopilot:
                 self.ap_ckb('log', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
                 return
 
-        img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
-        if img is None:
+        blobs, annotated = self.fss_detect_blobs_multi()
+        if blobs is None:
             self.ap_ckb('log', 'Auto FSS: screen capture failed')
             return
-        blobs, annotated = self.fss_find_signal_blobs(img)
 
         fname = os.path.join(self.debug_image_folder,
                              'afss_blobs_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png')
@@ -1343,6 +1379,7 @@ class EDAutopilot:
 
         prev_dx = prev_dy = None
         hold_x = hold_y = 0.0
+        empty_frames = 0
         for it in range(max_iters):
             if self.status.get_gui_focus() != GuiFocusFSS:
                 return 'failed'
@@ -1354,7 +1391,13 @@ class EDAutopilot:
                 cv2.imwrite(os.path.join(self.debug_image_folder,
                             f'afss_center_{datetime.now().strftime("%H%M%S")}_{it}.png'), annotated)
             if not blobs:
+                # Signals blink with the FSS scanning wave - be patient before giving up
+                empty_frames += 1
+                if empty_frames <= 3:
+                    sleep(0.7)
+                    continue
                 return 'no_blobs'
+            empty_frames = 0
             b = blobs[0]  # sorted by distance from the center
             dx = b['x'] - 0.5
             dy = b['y'] - 0.5
@@ -1427,24 +1470,28 @@ class EDAutopilot:
                 self.ap_ckb('log', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
                 return
 
-        res = self.auto_fss_center_blob()
-        if res == 'no_blobs':
-            self.ap_ckb('log', self.locale_safe(
-                'AFSS_NO_BLOBS', 'Auto FSS: no unresolved signals in view.'))
-            return
-        if res != 'centered':
-            self.ap_ckb('log', self.locale_safe(
-                'AFSS_NOT_CENTERED', 'Auto FSS: failed to center on the signal.'))
-            return
-
-        # Zoom onto the centered signal and wait for the journal to confirm the scan
+        # Center -> zoom -> wait for the journal scan; on failure re-detect and re-center
+        # before zooming deeper: a signal can open a nested scan region instead of
+        # resolving a body right away.
         count_before = self._afss_scanned_count()
         names_before = set((self.jn.ship_state().get('scanned_bodies') or {}).keys())
-        max_zoom = int(self.config.get('AutoFSSMaxZoomSteps', 2))
-        scan_timeout = float(self.config.get('AutoFSSScanTimeout', 8.0))
+        max_zoom = int(self.config.get('AutoFSSMaxZoomSteps', 3))
+        scan_timeout = float(self.config.get('AutoFSSScanTimeout', 6.0))
         zoomed = 0
         success = False
-        for _ in range(max_zoom):
+        fail_msg = None
+        for step in range(max_zoom):
+            res = self.auto_fss_center_blob()
+            if res == 'no_blobs':
+                if step == 0:
+                    fail_msg = self.locale_safe(
+                        'AFSS_NO_BLOBS', 'Auto FSS: no unresolved signals in view.')
+                break
+            if res != 'centered':
+                if step == 0:
+                    fail_msg = self.locale_safe(
+                        'AFSS_NOT_CENTERED', 'Auto FSS: failed to center on the signal.')
+                break
             self.keys.send('ExplorationFSSZoomIn')
             zoomed += 1
             t_start = datetime.now()
@@ -1462,6 +1509,8 @@ class EDAutopilot:
             self.ap_ckb('log', self.locale_safe(
                 'AFSS_SCANNED', 'Auto FSS: scanned {body}.').format(body=body))
             # The scan advisor (poll_body_scans) will print the value verdict on its own
+        elif fail_msg:
+            self.ap_ckb('log', fail_msg)
         else:
             self.ap_ckb('log', self.locale_safe(
                 'AFSS_SCAN_TIMEOUT', 'Auto FSS: zoomed but no scan registered - zooming back out.'))
