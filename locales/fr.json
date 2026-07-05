@@ -53,6 +53,7 @@
     "AFSS_SCANNED": "Auto-FSS : {body} scanné.",
     "AFSS_SCAN_TIMEOUT": "Auto-FSS : zoom effectué mais aucun scan enregistré - dézoome.",
     "AFSS_BUSY": "Auto-FSS : déjà en cours.",
+    "AFSS_ALL_DONE": "Auto-FSS : tous les corps de ce système sont déjà trouvés.",
 
     "OVERHEAT_AVOID_STAR": "Surchauffe, évitement de l'étoile",
     "OVERHEAT_ABORT_ALIGN": "Surchauffe - alignement interrompu",

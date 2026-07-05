@@ -1224,48 +1224,59 @@ class EDAutopilot:
         return [k for k in self.AUTO_FSS_REQUIRED_BINDS if self.keys.keys.get(k) is None]
 
     def fss_find_signal_blobs(self, img):
-        """ Find unresolved FSS signal blobs (pale wisps) in a full-screen FSS capture.
-        Saturation/Value based, so it is robust to RGB/BGR channel order: the wisps are
-        pale (low saturation), the orange HUD is saturated, the star glare is near-white
-        but far brighter than a wisp.
-        @return: (blobs, annotated_image); blobs = list of {'x','y','area'} in screen
-                 fractions, sorted by distance from the screen center. """
+        """ Find unresolved FSS signals (pale wisps / chevron clusters) in a full-screen
+        FSS capture. v2, calibrated against real 2560x1440 dry-run screenshots.
+        Saturation/Value based, so it is robust to RGB/BGR channel order: the signals are
+        pale (low saturation), the orange HUD is saturated. Large bright cores (star glare,
+        glowing captions) are cut out together with their halos; the fixed HUD areas
+        (info panels, EDAP mini panel, tuner cursor chevrons, spectrum bar) are masked.
+        @return: (blobs, annotated_image); blobs = list of {'x','y','area','support'} in
+                 screen fractions, sorted by distance from the screen center. """
         if img.shape[2] == 4:
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         h, w = img.shape[:2]
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         sat = hsv[:, :, 1]
-        val = cv2.GaussianBlur(hsv[:, :, 2], (21, 21), 0)
+        val = hsv[:, :, 2]
 
-        lo = int(self.config.get('AutoFSSBlobThreshold', 48))
-        cand = ((sat < 110) & (val > lo)).astype(np.uint8) * 255
+        # Pale bright pixels: signal wisps and chevrons, but not the orange HUD
+        thr_v = int(self.config.get('AutoFSSBlobThreshold', 110))
+        white = ((sat < 90) & (val > thr_v)).astype(np.uint8) * 255
 
-        # Cut out saturated-bright cores: central star glare, resolved bodies, HUD text
-        bright = (val > 200).astype(np.uint8) * 255
-        bright = cv2.dilate(bright, np.ones((25, 25), np.uint8))
-        cand[bright > 0] = 0
+        # Bright cores (white star glare, saturated orange star dots, glowing captions):
+        # keep only sizable areas, dilate wide to also kill their halos, subtract
+        core = ((val > 235) | ((sat > 150) & (val > 180))).astype(np.uint8) * 255
+        core = cv2.morphologyEx(core, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+        core = cv2.dilate(core, np.ones((91, 91), np.uint8))
+        white[core > 0] = 0
 
-        # Mask the fixed HUD areas: spectrum bar at the bottom, headers, side margins
-        cand[int(h * 0.70):, :] = 0
-        cand[:int(h * 0.08), :] = 0
-        cand[:, :int(w * 0.03)] = 0
-        cand[:, int(w * 0.97):] = 0
-        cand = cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        # Fixed HUD masks (fractions of screen, Russian locale layout at 2560x1440)
+        white[:int(h * 0.10), :] = 0               # top strip: Связь/Инфо headers
+        white[:int(h * 0.22), int(w * 0.60):] = 0  # info panel top right
+        white[:int(h * 0.30), :int(w * 0.18)] = 0  # EDAP mini panel top left
+        white[int(h * 0.67):, :] = 0               # tuner cursor chevrons + spectrum + help
+        white[:, :int(w * 0.11)] = 0               # left ruler / distance labels
+        white[:, int(w * 0.955):] = 0              # right edge
 
-        contours, _ = cv2.findContours(cand, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        kept = white.copy()
+        # Merge chevron groups / wisp fragments into clusters
+        clustered = cv2.dilate(white, np.ones((17, 17), np.uint8))
+        contours, _ = cv2.findContours(clustered, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
         scale = (h / 1440.0) ** 2
-        min_area = 250 * scale
-        max_area = 40000 * scale
         blobs = []
         annotated = img.copy()
         for c in contours:
-            a = cv2.contourArea(c)
-            if a < min_area or a > max_area:
-                continue
             x, y, bw, bh = cv2.boundingRect(c)
-            blobs.append({'x': (x + bw / 2) / w, 'y': (y + bh / 2) / h, 'area': a / (w * h)})
+            # Pixel support before clustering: rejects lone starfield dots
+            support = int(np.count_nonzero(kept[y:y + bh, x:x + bw]))
+            area = cv2.contourArea(c)
+            if support < 60 * scale or area > 90000 * scale:
+                continue
+            blobs.append({'x': (x + bw / 2) / w, 'y': (y + bh / 2) / h,
+                          'area': area / (w * h), 'support': support})
             cv2.rectangle(annotated, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
-            cv2.putText(annotated, str(len(blobs)), (x, max(12, y - 6)),
+            cv2.putText(annotated, str(len(blobs)), (x, max(14, y - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         blobs.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
         return blobs, annotated
@@ -1394,6 +1405,13 @@ class EDAutopilot:
                 'AFSS_MISSING_BINDS',
                 'Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.').format(
                 keys=', '.join(missing)))
+            return
+
+        # Nothing left to resolve in this system - do not touch the camera at all
+        ship = self.jn.ship_state()
+        if ship.get('fss_all_found') or (ship.get('fss_honk_done') and ship.get('fss_progress', 0.0) >= 1.0):
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_ALL_DONE', 'Auto FSS: all bodies in this system are already found.'))
             return
 
         set_focus_elite_window()
