@@ -1377,16 +1377,17 @@ class EDAutopilot:
         return patches, annotated
 
     def fss_find_fog_temporal(self, frames, annotate_on=None):
-        """ Wisp detection by frame differencing over a burst of captures (user idea,
-        WoW-fishing-bot style): wisps BLINK in place as the scanning wave passes, so
-        the per-pixel brightness amplitude (max-min) over the burst spikes exactly at
-        wisp locations. Static things (stars, HUD, background nebula) cancel out, and
-        the traveling wave spreads its energy over its whole path. Catches wisps that
-        a single frame misses because of the wave anti-phase.
+        """ Wisp detection over a burst of captures from one camera position (user idea,
+        WoW-fishing-bot style: compare screen states over time). Calibrated on real FSS
+        videos: the per-pixel GLOW DUTY CYCLE separates the classes cleanly -
+          wisps glow 60-80%% of the time (round sustained-glow areas),
+          wave-passed empty sky only flashes briefly (<20%%),
+          static glare glows 100%% but with near-zero amplitude.
+        So a target pixel = lit most of the burst AND actually changing.
         @param frames: list of frames from the same camera position.
         @return: (patches, annotated_on_last_frame). """
-        if len(frames) < 2:
-            return [], (frames[0] if frames else None)
+        if len(frames) < 3:
+            return [], (frames[-1] if frames else None)
         last, allowed, core_centers = self._afss_sky_mask(frames[-1])
         vals = []
         for f in frames:
@@ -1396,22 +1397,15 @@ class EDAutopilot:
         stack = np.stack(vals)
         amp = (stack.max(axis=0) - stack.min(axis=0)).astype(np.uint8)
 
-        # Adaptive threshold: a wisp blinks far stronger than the traveling wave glows,
-        # so anchor the cutoff to the strongest amplitudes present in the burst
-        base_thr = int(self.config.get('AutoFSSFogAmpThreshold', 12))
-        sky_amp = amp[allowed > 0]
-        p_hi = float(np.percentile(sky_amp, 99.5)) if sky_amp.size else 0.0
-        p_mid = float(np.percentile(sky_amp, 90.0)) if sky_amp.size else 0.0
-        # Flat amplitude landscape = only the traveling wave blinked (it lights every
-        # pixel on its path equally); a wisp shows as a sharp local amplitude peak
-        if p_hi < 1.5 * max(p_mid, 1.0):
-            annotated = annotate_on if annotate_on is not None else last.copy()
-            return [], annotated
-        amp_thr = max(base_thr, 0.45 * p_hi)
-        mask = ((amp > amp_thr) & (amp < 170) & (allowed > 0)).astype(np.uint8) * 255
+        sky_med = float(np.median(stack[:, allowed > 0])) if np.any(allowed) else 26.0
+        delta = int(self.config.get('AutoFSSFogDelta', 7))
+        on = (stack > (sky_med + delta + 1)).mean(axis=0)
+
+        duty_lo = float(self.config.get('AutoFSSFogDutyMin', 0.45))
+        amp_min = int(self.config.get('AutoFSSFogAmpMin', 10))
+        mask = ((on >= duty_lo) & (amp > amp_min) & (allowed > 0)).astype(np.uint8) * 255
 
         annotated = annotate_on if annotate_on is not None else last.copy()
-        # A blinking wisp's amplitude core is smaller than its static footprint
         patches = self._afss_extract_patches(mask, last, core_centers, annotated,
                                              tag='D', min_area=0.0015)
         return patches, annotated
@@ -1707,7 +1701,7 @@ class EDAutopilot:
         wisp fog in single frames, then frame differencing over the burst - wisps
         blink with the scanning wave and can be invisible in every single frame. """
         frames = []
-        for i in range(3):
+        for i in range(4):
             img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
             if img is None:
                 return False
@@ -1718,8 +1712,8 @@ class EDAutopilot:
             if fogs:
                 return True
             frames.append(img)
-            if i < 2:
-                sleep(0.8)
+            if i < 3:
+                sleep(0.6)
         patches, _ = self.fss_find_fog_temporal(frames)
         return bool(patches)
 
