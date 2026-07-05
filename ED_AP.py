@@ -1474,47 +1474,76 @@ class EDAutopilot:
         hold_x = hold_y = 0.0
         empty_frames = 0
         coarse_centered = 0
+        last_aim = None
+        last_annotated = None
+        stamp = datetime.now().strftime('%H%M%S')
+
+        def save_frame(tag, image):
+            try:
+                cv2.imwrite(os.path.join(self.debug_image_folder,
+                            f'afss_aim_{stamp}_{tag}.png'), image)
+            except Exception:
+                pass
+
+        result = 'failed'
         for it in range(max_iters):
             if self.status.get_gui_focus() != GuiFocusFSS:
-                return 'failed'
+                break
             img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
             if img is None:
-                return 'failed'
+                break
             # Two-tier targeting: the chevron glyphs (fine targets) only appear at close
             # range, so when none are visible steer at the wisp fog clouds (coarse)
             blobs, annotated = self.fss_find_signal_blobs(img)
-            mode = 'fine'
-            target = blobs[0] if blobs else None
-            if target is None:
-                fogs, annotated = self.fss_find_fog_patches(img, annotate_on=annotated)
-                if fogs:
-                    target = fogs[0]
-                    mode = 'coarse'
-            if self.debug_images:
-                cv2.imwrite(os.path.join(self.debug_image_folder,
-                            f'afss_center_{datetime.now().strftime("%H%M%S")}_{it}.png'), annotated)
-            if target is None:
+            fogs, annotated = self.fss_find_fog_patches(img, annotate_on=annotated)
+            last_annotated = annotated
+            if it == 0:
+                # Always keep the first and the final aim frame for diagnostics
+                save_frame('first', annotated)
+            elif self.debug_images:
+                save_frame(f'it{it}', annotated)
+
+            if blobs:
+                cands, mode = blobs, 'fine'
+            elif fogs:
+                cands, mode = fogs, 'coarse'
+            else:
                 # Signals blink with the FSS scanning wave - be patient before giving up
                 empty_frames += 1
                 if empty_frames <= 3:
                     sleep(0.7)
                     continue
-                return 'no_blobs'
+                result = 'no_blobs'
+                break
             empty_frames = 0
+
+            # Target continuity: stick to the candidate closest to the previous aim
+            # point, so a blinking scene does not make us hop between targets
+            target = cands[0]
+            if last_aim is not None:
+                near = min(cands, key=lambda b: (b['x'] - last_aim[0]) ** 2 + (b['y'] - last_aim[1]) ** 2)
+                if (near['x'] - last_aim[0]) ** 2 + (near['y'] - last_aim[1]) ** 2 <= 0.2 ** 2:
+                    target = near
+                else:
+                    prev_dx = prev_dy = None  # target jumped: drop stale measurements
+            last_aim = (target['x'], target['y'])
+
             dx = target['x'] - 0.5
             dy = target['y'] - 0.5
             tol_use = tol if mode == 'fine' else max(tol, 0.05)
-            logger.debug(f'afss center iter {it} [{mode}]: dx={dx:.3f} dy={dy:.3f} '
-                         f'sign=({self._afss_sign_x},{self._afss_sign_y}) '
-                         f'gain=({self._afss_gain_x:.2f},{self._afss_gain_y:.2f})')
+            logger.info(f'afss aim iter {it} [{mode}]: dx={dx:.3f} dy={dy:.3f} '
+                        f'sign=({self._afss_sign_x},{self._afss_sign_y}) '
+                        f'gain=({self._afss_gain_x:.2f},{self._afss_gain_y:.2f})')
             if abs(dx) <= tol_use and abs(dy) <= tol_use:
                 if mode == 'fine':
-                    return 'centered'
+                    result = 'centered'
+                    break
                 # Fog centered: give the chevrons a moment to materialize, then
                 # zoom into the cloud anyway
                 coarse_centered += 1
                 if coarse_centered >= 4:
-                    return 'centered'
+                    result = 'centered'
+                    break
                 sleep(0.6)
                 continue
             coarse_centered = 0
@@ -1553,7 +1582,10 @@ class EDAutopilot:
                                else 'ExplorationFSSCameraPitchDecreaseButton', hold=hold_y)
             prev_dx, prev_dy = dx, dy
             sleep(0.30)  # let the view settle before the next capture
-        return 'failed'
+
+        if last_annotated is not None:
+            save_frame(f'last_{result}', last_annotated)
+        return result
 
     def _afss_view_has_target(self) -> bool:
         """ Quick check whether the current FSS view contains any target (signal glyphs
@@ -1613,6 +1645,14 @@ class EDAutopilot:
         if ship.get('fss_all_found') or (ship.get('fss_honk_done') and ship.get('fss_progress', 0.0) >= 1.0):
             self.ap_ckb('log', self.locale_safe(
                 'AFSS_ALL_DONE', 'Auto FSS: all bodies in this system are already found.'))
+            return
+
+        # Undiscovered-only policy: skip systems already present in EDSM
+        # (someone has been here - no first discoveries to gain)
+        if self.config.get('AutoFSSOnlyUndiscovered', True) and self.edsm_info and not self.edsm_undiscovered:
+            self.ap_ckb('log', self.locale_safe(
+                'AFSS_SYSTEM_KNOWN',
+                'Auto FSS: system is already in EDSM - skipping. Set AutoFSSOnlyUndiscovered=false in AP.json to scan anyway.'))
             return
 
         set_focus_elite_window()

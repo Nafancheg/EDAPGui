@@ -58,6 +58,7 @@
     "AFSS_SCAN_TIMEOUT": "Auto-FSS: zoom hecho pero sin escaneo registrado - alejando de nuevo.",
     "AFSS_BUSY": "Auto-FSS: ya en ejecución.",
     "AFSS_ALL_DONE": "Auto-FSS: todos los cuerpos de este sistema ya están encontrados.",
+    "AFSS_SYSTEM_KNOWN": "Auto-FSS: el sistema ya está en EDSM - omitiendo. Para escanear igualmente: AutoFSSOnlyUndiscovered=false en AP.json.",
 
     "OVERHEAT_AVOID_STAR": "Sobrecalentamiento, evitando la estrella",
     "OVERHEAT_ABORT_ALIGN": "Sobrecalentamiento - alineación abortada",

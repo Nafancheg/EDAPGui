@@ -58,6 +58,7 @@
     "AFSS_SCAN_TIMEOUT": "Авто-FSS: зум выполнен, но скан не зафиксирован — возвращаю зум.",
     "AFSS_BUSY": "Авто-FSS: уже выполняется.",
     "AFSS_ALL_DONE": "Авто-FSS: все тела в этой системе уже найдены.",
+    "AFSS_SYSTEM_KNOWN": "Авто-FSS: система уже есть в EDSM — пропускаю. Чтобы сканировать всё равно: AutoFSSOnlyUndiscovered=false в AP.json.",
 
     "OVERHEAT_AVOID_STAR": "Перегрев, отворачиваю от звезды",
     "OVERHEAT_ABORT_ALIGN": "Перегрев — прерываю наведение",
