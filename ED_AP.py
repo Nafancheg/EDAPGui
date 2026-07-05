@@ -1308,6 +1308,17 @@ class EDAutopilot:
         # Cut out bright cores (stars, glowing captions) with their halos
         core = ((val > 235) | ((sat > 150) & (val > 180))).astype(np.uint8) * 255
         core = cv2.morphologyEx(core, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+        # Remember the core centers: the DIM outer halo of a resolved star extends far
+        # beyond any reasonable dilation and reads as fog, so patches centered near a
+        # core are rejected later instead
+        core_contours, _ = cv2.findContours(core, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        core_centers = []
+        for cc in core_contours:
+            if cv2.contourArea(cc) < 40:
+                continue
+            m = cv2.moments(cc)
+            if m['m00']:
+                core_centers.append((m['m10'] / m['m00'] / w, m['m01'] / m['m00'] / h))
         core = cv2.dilate(core, np.ones((91, 91), np.uint8))
         allowed[core > 0] = 0
 
@@ -1328,12 +1339,17 @@ class EDAutopilot:
         annotated = annotate_on if annotate_on is not None else img.copy()
         for c in contours:
             a = cv2.contourArea(c) / (sw * sh)
-            if a < 0.004:
+            # Lower cap: noise; upper cap: a scanning-wave flood covering a big part
+            # of the sky is not a steerable target
+            if a < 0.004 or a > 0.12:
                 continue
             x, y, bw, bh = cv2.boundingRect(c)
             m = cv2.moments(c)
             cx = (m['m10'] / m['m00']) / sw if m['m00'] else (x + bw / 2) / sw
             cy = (m['m01'] / m['m00']) / sh if m['m00'] else (y + bh / 2) / sh
+            # Star halo, not a wisp: patch centered on a resolved star core
+            if any((cx - kx) ** 2 + (cy - ky) ** 2 <= 0.09 ** 2 for kx, ky in core_centers):
+                continue
             patches.append({'x': cx, 'y': cy, 'area': a})
             p1 = (int(x * 8), int(y * 8))
             p2 = (int((x + bw) * 8), int((y + bh) * 8))
