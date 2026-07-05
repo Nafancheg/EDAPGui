@@ -793,16 +793,8 @@ class APGui:
                             activebackground='#2a5578', activeforeground='#9fd8ff',
                             relief='flat', bd=0, font=('Arial', 9, 'bold'))
         btn_fss.grid(row=0, column=5, padx=2)
-        btn_afss = tk.Button(body, text=self.t('MINI_BTN_AFSS', 'AFSS'), width=5,
-                             command=self.test_auto_fss_click, bg='#3a2a52', fg='#b09fff',
-                             activebackground='#55407a', activeforeground='#cdbfff',
-                             relief='flat', bd=0, font=('Arial', 9, 'bold'))
-        btn_afss.grid(row=0, column=6, padx=2)
-        btn_afss1 = tk.Button(body, text=self.t('MINI_BTN_AFSS_ONE', 'SCAN1'), width=6,
-                              command=self.auto_fss_scan_one_click, bg='#52122a', fg='#ff9fc0',
-                              activebackground='#7a2040', activeforeground='#ffbfd8',
-                              relief='flat', bd=0, font=('Arial', 9, 'bold'))
-        btn_afss1.grid(row=0, column=7, padx=2)
+        # Auto-FSS (AFSS/SCAN1) buttons disabled for now - experimental camera-steering
+        # scanner is not reliable yet. Code kept in ED_AP.py, just not exposed in the UI.
 
         # Status/overlay info block, refreshed periodically
         self.mini_info = tk.Label(panel, text='', bg='#101010', fg='#e0a060',
