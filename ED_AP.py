@@ -1281,6 +1281,66 @@ class EDAutopilot:
         blobs.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
         return blobs, annotated
 
+    def fss_find_fog_patches(self, img, annotate_on=None):
+        """ Find wisp fog clouds - the coarse (long-range) auto-FSS targets. The signal
+        chevron glyphs only appear once the camera is already close, so from afar we
+        steer at these clouds first. The fog has the same hue/saturation as empty sky
+        and differs only by brightness, hence the adaptive threshold (sky median V + delta).
+        Calibrated on real 2560x1440 screenshots (fog V ~35-64 vs sky ~25-28).
+        @return: (patches, annotated); patches = [{'x','y','area'}] in screen fractions,
+                 sorted by distance from the screen center. """
+        if img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        h, w = img.shape[:2]
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        sat, val = hsv[:, :, 1], hsv[:, :, 2]
+
+        allowed = np.ones((h, w), np.uint8)
+        allowed[:int(h * 0.10), :] = 0
+        allowed[:int(h * 0.22), int(w * 0.60):] = 0
+        allowed[:int(h * 0.30), :int(w * 0.18)] = 0
+        allowed[int(h * 0.67):, :] = 0
+        allowed[:, :int(w * 0.055)] = 0
+        allowed[:, int(w * 0.955):] = 0
+
+        # Cut out bright cores (stars, glowing captions) with their halos
+        core = ((val > 235) | ((sat > 150) & (val > 180))).astype(np.uint8) * 255
+        core = cv2.morphologyEx(core, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+        core = cv2.dilate(core, np.ones((91, 91), np.uint8))
+        allowed[core > 0] = 0
+
+        delta = int(self.config.get('AutoFSSFogDelta', 7))
+        sky_med = float(np.median(val[allowed > 0])) if np.any(allowed) else 26.0
+        thr = max(sky_med + delta, 32.0)
+        fog = ((val > thr) & (val < 170) & (allowed > 0)).astype(np.uint8) * 255
+
+        # Coarse scale: kill thin grid/ring lines, keep big soft clouds
+        small = cv2.resize(fog, (w // 8, h // 8), interpolation=cv2.INTER_AREA)
+        small = cv2.GaussianBlur(small, (9, 9), 0)
+        _, small = cv2.threshold(small, 110, 255, cv2.THRESH_BINARY)
+        small = cv2.morphologyEx(small, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+
+        contours, _ = cv2.findContours(small, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        sw, sh = small.shape[1], small.shape[0]
+        patches = []
+        annotated = annotate_on if annotate_on is not None else img.copy()
+        for c in contours:
+            a = cv2.contourArea(c) / (sw * sh)
+            if a < 0.004:
+                continue
+            x, y, bw, bh = cv2.boundingRect(c)
+            m = cv2.moments(c)
+            cx = (m['m10'] / m['m00']) / sw if m['m00'] else (x + bw / 2) / sw
+            cy = (m['m01'] / m['m00']) / sh if m['m00'] else (y + bh / 2) / sh
+            patches.append({'x': cx, 'y': cy, 'area': a})
+            p1 = (int(x * 8), int(y * 8))
+            p2 = (int((x + bw) * 8), int((y + bh) * 8))
+            cv2.rectangle(annotated, p1, p2, (255, 160, 0), 3)
+            cv2.putText(annotated, f'W{len(patches)}', (p1[0], max(20, p1[1] - 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 160, 0), 2)
+        patches.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
+        return patches, annotated
+
     @staticmethod
     def _afss_merge_blobs(all_blobs, radius=0.03):
         """ Union blob detections from several frames: entries closer than @radius are
@@ -1298,25 +1358,42 @@ class EDAutopilot:
         return merged
 
     def fss_detect_blobs_multi(self, frames: int = 3, delay: float = 0.7):
-        """ Detect signals over several frames and union the results: the FSS scanning
-        wave makes signals blink, so a single frame can miss them.
-        @return: (merged_blobs, annotated_last_frame) or (None, None) on capture failure. """
+        """ Detect signals and fog clouds over several frames. Signals are unioned (they
+        blink with the FSS scanning wave, one frame can miss them); fog patches are voted
+        (kept when seen in 2+ frames) because the moving wave itself looks like fog but
+        never stays in place between frames.
+        @return: (merged_blobs, voted_fog, annotated_last_frame), or (None, None, None)
+                 on capture failure. """
         all_blobs = []
+        fog_votes = []
         annotated = None
         for i in range(frames):
             img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
             if img is None:
-                return None, None
+                return None, None, None
             blobs, annotated = self.fss_find_signal_blobs(img)
+            fogs, annotated = self.fss_find_fog_patches(img, annotate_on=annotated)
             all_blobs.extend(blobs)
+            for p in fogs:
+                for v in fog_votes:
+                    if (p['x'] - v['x']) ** 2 + (p['y'] - v['y']) ** 2 <= 0.06 ** 2:
+                        v['votes'] += 1
+                        break
+                else:
+                    fog_votes.append(dict(p, votes=1))
             if i < frames - 1:
                 sleep(delay)
         merged = self._afss_merge_blobs(all_blobs)
+        need = min(2, frames)
+        voted_fog = [v for v in fog_votes if v['votes'] >= need]
+        voted_fog.sort(key=lambda b: (b['x'] - 0.5) ** 2 + (b['y'] - 0.5) ** 2)
         # Mark the merged (cross-frame) detections on the last frame with circles
         h, w = annotated.shape[:2]
-        for i, b in enumerate(merged, start=1):
+        for b in merged:
             cv2.circle(annotated, (int(b['x'] * w), int(b['y'] * h)), 34, (0, 255, 255), 2)
-        return merged, annotated
+        for v in voted_fog:
+            cv2.circle(annotated, (int(v['x'] * w), int(v['y'] * h)), 60, (255, 160, 0), 3)
+        return merged, voted_fog, annotated
 
     def test_auto_fss_detect(self):
         """ Auto-FSS dry run (mini panel button): open the FSS if needed, detect the
@@ -1343,7 +1420,7 @@ class EDAutopilot:
                 self.ap_ckb('log', self.locale_safe('ELW_FSS_NOT_OPEN', 'FSS did not open'))
                 return
 
-        blobs, annotated = self.fss_detect_blobs_multi()
+        blobs, fogs, annotated = self.fss_detect_blobs_multi()
         if blobs is None:
             self.ap_ckb('log', 'Auto FSS: screen capture failed')
             return
@@ -1357,7 +1434,13 @@ class EDAutopilot:
             count=len(blobs), file=os.path.basename(fname)))
         for i, b in enumerate(blobs[:10], start=1):
             self.ap_ckb('log', f"  blob {i}: x={b['x']:.3f} y={b['y']:.3f} area={b['area'] * 100:.3f}%")
-        logger.info(f"Auto FSS dry run: {len(blobs)} blobs, image {fname}, missing binds: {missing}")
+        self.ap_ckb('log', self.locale_safe(
+            'AFSS_FOG_FOUND', 'Auto FSS test: {count} wisp clouds (coarse targets).').format(
+            count=len(fogs)))
+        for i, p in enumerate(fogs[:6], start=1):
+            self.ap_ckb('log', f"  cloud W{i}: x={p['x']:.3f} y={p['y']:.3f} area={p['area'] * 100:.2f}%")
+        logger.info(f"Auto FSS dry run: {len(blobs)} blobs, {len(fogs)} fog patches, "
+                    f"image {fname}, missing binds: {missing}")
 
         if opened_here:
             self.keys.send('ExplorationFSSQuit')
@@ -1378,19 +1461,30 @@ class EDAutopilot:
         max_iters = int(self.config.get('AutoFSSMaxCenterIters', 14))
 
         prev_dx = prev_dy = None
+        prev_mode = None
         hold_x = hold_y = 0.0
         empty_frames = 0
+        coarse_centered = 0
         for it in range(max_iters):
             if self.status.get_gui_focus() != GuiFocusFSS:
                 return 'failed'
             img = self.ocr.capture_region_pct({'rect': [0.0, 0.0, 1.0, 1.0]})
             if img is None:
                 return 'failed'
+            # Two-tier targeting: the chevron glyphs (fine targets) only appear at close
+            # range, so when none are visible steer at the wisp fog clouds (coarse)
             blobs, annotated = self.fss_find_signal_blobs(img)
+            mode = 'fine'
+            target = blobs[0] if blobs else None
+            if target is None:
+                fogs, annotated = self.fss_find_fog_patches(img, annotate_on=annotated)
+                if fogs:
+                    target = fogs[0]
+                    mode = 'coarse'
             if self.debug_images:
                 cv2.imwrite(os.path.join(self.debug_image_folder,
                             f'afss_center_{datetime.now().strftime("%H%M%S")}_{it}.png'), annotated)
-            if not blobs:
+            if target is None:
                 # Signals blink with the FSS scanning wave - be patient before giving up
                 empty_frames += 1
                 if empty_frames <= 3:
@@ -1398,17 +1492,30 @@ class EDAutopilot:
                     continue
                 return 'no_blobs'
             empty_frames = 0
-            b = blobs[0]  # sorted by distance from the center
-            dx = b['x'] - 0.5
-            dy = b['y'] - 0.5
-            logger.debug(f'afss center iter {it}: dx={dx:.3f} dy={dy:.3f} '
+            dx = target['x'] - 0.5
+            dy = target['y'] - 0.5
+            tol_use = tol if mode == 'fine' else max(tol, 0.05)
+            logger.debug(f'afss center iter {it} [{mode}]: dx={dx:.3f} dy={dy:.3f} '
                          f'sign=({self._afss_sign_x},{self._afss_sign_y}) '
                          f'gain=({self._afss_gain_x:.2f},{self._afss_gain_y:.2f})')
-            if abs(dx) <= tol and abs(dy) <= tol:
-                return 'centered'
+            if abs(dx) <= tol_use and abs(dy) <= tol_use:
+                if mode == 'fine':
+                    return 'centered'
+                # Fog centered: give the chevrons a moment to materialize, then
+                # zoom into the cloud anyway
+                coarse_centered += 1
+                if coarse_centered >= 4:
+                    return 'centered'
+                sleep(0.6)
+                continue
+            coarse_centered = 0
 
             # Learn from the previous move: flip the direction if the blob moved away,
-            # otherwise refine the gain from the actually observed movement
+            # otherwise refine the gain from the actually observed movement.
+            # Only compare measurements against the same target type.
+            if mode != prev_mode:
+                prev_dx = prev_dy = None
+            prev_mode = mode
             if prev_dx is not None and hold_x > 0.0:
                 moved = abs(prev_dx) - abs(dx)
                 if moved < -0.005:

@@ -47,6 +47,7 @@
     "MINI_BTN_AFSS": "AFSS",
     "AFSS_MISSING_BINDS": "Auto-FSS: sin tecla de teclado para: {keys}. Asígnalas en los ajustes del juego.",
     "AFSS_BLOBS_FOUND": "Prueba auto-FSS: {count} señales detectadas, captura: {file}",
+    "AFSS_FOG_FOUND": "Prueba auto-FSS: {count} nubes (objetivos gruesos).",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto-FSS: sin señales sin resolver a la vista.",
     "AFSS_NOT_CENTERED": "Auto-FSS: no se pudo centrar la señal.",

@@ -47,6 +47,7 @@
     "MINI_BTN_AFSS": "AFSS",
     "AFSS_MISSING_BINDS": "Auto FSS: no keyboard key for: {keys}. Bind them in the game settings.",
     "AFSS_BLOBS_FOUND": "Auto FSS test: {count} signal blobs found, screenshot: {file}",
+    "AFSS_FOG_FOUND": "Auto FSS test: {count} wisp clouds (coarse targets).",
     "MINI_BTN_AFSS_ONE": "SCAN1",
     "AFSS_NO_BLOBS": "Auto FSS: no unresolved signals in view.",
     "AFSS_NOT_CENTERED": "Auto FSS: failed to center on the signal.",
