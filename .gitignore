@@ -40,3 +40,6 @@ logs/
 # Local launchers / IDE
 run.bat
 .vscode/
+
+# Claude Code local data
+.claude/
