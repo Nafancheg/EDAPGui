@@ -15,35 +15,28 @@ from typing import TypedDict
 import cv2
 import numpy as np
 
-from EDAPColonizeEditor import read_json_file, write_json_file
+from EDAP_data import *
+from JsonConfigIO import read_json_file, write_json_file
 from EDFSS import EDFSS
 from EDPlayerSettings import EDPlayerSettings
 from MachineLearning import MachLearn, ModelType
 from simple_localization import LocalizationManager
 
 from EDAP_EDMesg_Server import EDMesgServer
-from EDGalaxyMap import EDGalaxyMap
 from EDGraphicsSettings import EDGraphicsSettings
 from EDShipControl import EDShipControl, CompassTargetOffset
-from EDStationServicesInShip import EDStationServicesInShip
-from EDSystemMap import EDSystemMap
 from EDlogger import logging
 import Image_Templates
 import Screen
 import Screen_Regions
-from EDWayPoint import *
 from EDJournal import *
 from EDKeys import *
-from EDafk_combat import AFK_Combat
-from EDInternalStatusPanel import EDInternalStatusPanel
 from NavRouteParser import NavRouteParser
 from OCR import OCR
 from EDNavigationPanel import EDNavigationPanel
 from Overlay import *
 from StatusParser import StatusParser
 from Voice import *
-from Robigo import *
-from TCE_Integration import TceIntegration
 
 """
 File:EDAP.py    EDAutopilot
@@ -108,12 +101,9 @@ class EDAutopilot:
         self._sc_sco_active_loop_enable = False
         self.sc_sco_is_active = 0
         self._sc_sco_active_on_ls = 0
-        self._single_waypoint_station = None
-        self._single_waypoint_system = None
         self._prev_star_system = None
         self.honk_thread = None
         self.speed_demand = None  # 'Speed0', 'Speed50', 'Speed100', 'SCSpeed0', 'SCSpeed50' or 'SCSpeed100'
-        self._tce_integration = None
         self._ocr = None
         self._fss_screen = None
         self._mach_learn = None
@@ -144,11 +134,6 @@ class EDAutopilot:
         # initialize all to false
         self.fsd_assist_enabled = False
         self.sc_assist_enabled = False
-        self.afk_combat_assist_enabled = False
-        self.waypoint_assist_enabled = False
-        self.robigo_assist_enabled = False
-        self.dss_assist_enabled = False
-        self.single_waypoint_enabled = False
 
         # Create instance of each of the needed Classes
         self.scr = Screen.Screen(cb)
@@ -189,16 +174,9 @@ class EDAutopilot:
             logger.warning(f"WARNING: {msg}")
 
         self.keys = EDKeys(cb, locale=self.locale)
-        self.afk_combat = AFK_Combat(self, self.keys, self.jn, self.vce)
-        self.waypoint = EDWayPoint(self, cb, self.jn.ship_state()['odyssey'])
-        self.robigo = Robigo(self)
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
-        self.internal_panel = EDInternalStatusPanel(self, self.scr, self.keys, cb)
-        self.galaxy_map = EDGalaxyMap(self, self.scr, self.keys, cb, self.jn.ship_state()['odyssey'])
-        self.system_map = EDSystemMap(self, self.scr, self.keys, cb, self.jn.ship_state()['odyssey'])
-        self.stn_svcs_in_ship = EDStationServicesInShip(self, self.scr, self.keys, cb)
         self.nav_panel = EDNavigationPanel(self, self.scr, self.keys, cb)
 
         self.mesg_server = EDMesgServer(self, cb)
@@ -275,10 +253,6 @@ class EDAutopilot:
         self.cv_view_x = 10
         self.cv_view_y = 10
 
-        # Load waypoints
-        # TODO - Enable this at some point to auto load the previous waypoints on startup
-        # self.ap_ckb('load_waypoints', self.config['WaypointFilepath'])
-
         # start the engine thread
         self.terminate = False  # terminate used by the thread to exit its loop
         if do_thread:
@@ -291,13 +265,6 @@ class EDAutopilot:
 
         # Process config[] settings to update classes as necessary
         self.process_config_settings()
-
-    @property
-    def tce_integration(self) -> TceIntegration:
-        """ Load TCE Integration class when needed. """
-        if not self._tce_integration:
-            self._tce_integration = TceIntegration(self, self.ap_ckb)
-        return self._tce_integration
 
     @property
     def mach_learn(self) -> MachLearn:
@@ -335,9 +302,6 @@ class EDAutopilot:
             self.config['Key_DefHoldTime'] = self.keys.key_def_hold_time
             self.config['Key_RepeatDelay'] = self.keys.key_repeat_delay
 
-        if self.waypoint:
-            self.config['WaypointFilepath'] = self.waypoint.filename
-
         # Delete old settings
         self.config.pop('target_align_inertia_pitch_factor', None)
         self.config.pop('target_align_inertia_yaw_factor', None)
@@ -360,9 +324,7 @@ class EDAutopilot:
             "DockingRetries": 30,  # number of time to attempt docking
             "HotKey_StartFSD": "home",  # if going to use other keys, need to look at the python keyboard package
             "HotKey_StartSC": "ins",  # to determine other keynames, make sure these keys are not used in ED bindings
-            "HotKey_StartRobigo": "pgup",  #
             "HotKey_StopAllAssists": "end",
-            "Robigo_Single_Loop": False,  # True means only 1 loop will executed and then terminate the Robigo, will not perform mission processing
             "EnableRandomness": False,  # add some additional random sleep times to avoid AP detection (0-3sec at specific locations)
             "ActivateEliteEachKey": False,  # Activate Elite window before each key or group of keys
             "OverlayTextEnable": False,  # Experimental at this stage
@@ -383,8 +345,6 @@ class EDAutopilot:
             "ShipConfigFile": None,  # Ship config to load on start - deprecated
             "TargetScale": 1.0,  # Scaling of the target when a system is selected
             "ScreenScale": 1.0,  # Scaling of the target when a system is selected
-            "TCEDestinationFilepath": "C:\\TCE\\DUMP\\Destination.json",  # Destination file for TCE
-            "TCEInstallationPath": "C:\\TCE",
             "AutomaticLogout": False,  # Logout when we are done with the mission
             "FCDepartureTime": 5.0,  # Extra time to fly away from a Fleet Carrier
             "FCDepartureAngle": 90.0,  # Angle to pitch up when leaving a Fleet Carrier
@@ -396,9 +356,7 @@ class EDAutopilot:
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
             "DebugOverlay": False,
-            "AFKCombat_AttackAtWill": False,
             "HotkeysEnable": False,  # Enable hotkeys
-            "WaypointFilepath": "",  # The previous waypoint file path
             "DebugOCR": False,  # For debug, write all OCR data to output folder
             "DebugImages": False,  # For debug, write debug images to output folder
             "Key_ModDelay": 0.01,  # Delay for key modifiers to ensure modifier is detected before/after the key
@@ -413,9 +371,7 @@ class EDAutopilot:
             "FastTravelMode": False,  # Skip honk/FSS scans and extra waits to travel as fast as possible
             "Debug_ShowCompassOverlay": False,  # For test
             "Debug_ShowTargetOverlay": False,  # For test
-            "GalMap_SystemSelectDelay": 0.5,  # Delay selecting the system when in galaxy map
             "PlanetDepartureSCOTime": 5.0,  # SCO boost time when leaving planet in secs
-            "FleetCarrierMonitorCAPIDataPath": "",  # EDMC Fleet Carrier Monitor plugin data export path
             "AutoTuneRPYRates": False,  # Enable auto-tune for RPY rates.
             "Wait_FSSDetect": 2.5,  # Wait after entering FSS before capturing the screen for ELW detection
             "Wait_DockApproach": 12.0,  # Time at 50% throttle to get within 7.5km of the station before requesting docking
@@ -437,10 +393,6 @@ class EDAutopilot:
                 cnf['SunBrightThreshold'] = 125
             if 'ScreenScale' not in cnf:
                 cnf['ScreenScale'] = 1.0
-            if 'TCEDestinationFilepath' not in cnf:
-                cnf['TCEDestinationFilepath'] = "C:\\TCE\\DUMP\\Destination.json"
-            if 'TCEInstallationPath' not in cnf:
-                cnf['TCEInstallationPath'] = "C:\\TCE"
             if 'AutomaticLogout' not in cnf:
                 cnf['AutomaticLogout'] = False
             if 'FCDepartureTime' not in cnf:
@@ -459,12 +411,8 @@ class EDAutopilot:
                 cnf['EDMesgEventsPort'] = 15571
             if 'DebugOverlay' not in cnf:
                 cnf['DebugOverlay'] = False
-            if 'AFKCombat_AttackAtWill' not in cnf:
-                cnf['AFKCombat_AttackAtWill'] = False
             if 'HotkeysEnable' not in cnf:
                 cnf['HotkeysEnable'] = False
-            if 'WaypointFilepath' not in cnf:
-                cnf['WaypointFilepath'] = ""
             if 'DebugOCR' not in cnf:
                 cnf['DebugOCR'] = False
             if 'DebugImages' not in cnf:
@@ -493,16 +441,12 @@ class EDAutopilot:
                 cnf['Debug_ShowCompassOverlay'] = False  # For test
             if 'Debug_ShowTargetOverlay' not in cnf:
                 cnf['Debug_ShowTargetOverlay'] = False  # For test
-            if 'GalMap_SystemSelectDelay' not in cnf:
-                cnf['GalMap_SystemSelectDelay'] = 0.5
             if 'FCDepartureAngle' not in cnf:
                 cnf['FCDepartureAngle'] = 90.0
             if 'OCDepartureAngle' not in cnf:
                 cnf['OCDepartureAngle'] = 90.0
             if 'PlanetDepartureSCOTime' not in cnf:
                 cnf['PlanetDepartureSCOTime'] = 5.0
-            if 'FleetCarrierMonitorCAPIDataPath' not in cnf:
-                cnf['FleetCarrierMonitorCAPIDataPath'] = ""
             if 'AutoTuneRPYRates' not in cnf:
                 cnf['AutoTuneRPYRates'] = ""
             if 'Wait_FSSDetect' not in cnf:
@@ -641,16 +585,8 @@ class EDAutopilot:
         ap_mode = "Offline"
         if self.fsd_assist_enabled:
             ap_mode = "FSD Route Assist"
-        elif self.robigo_assist_enabled:
-            ap_mode = "Robigo Assist"
         elif self.sc_assist_enabled:
             ap_mode = "SC Assist"
-        elif self.waypoint_assist_enabled:
-            ap_mode = "Waypoint Assist"
-        elif self.afk_combat_assist_enabled:
-            ap_mode = "AFK Combat Assist"
-        elif self.dss_assist_enabled:
-            ap_mode = "DSS Assist"
 
         ship_state = self.jn.ship_state()['status']
         if ship_state is None:
@@ -729,9 +665,6 @@ class EDAutopilot:
             self.keys.key_mod_delay = self.config['Key_ModDelay']
             self.keys.key_def_hold_time = self.config['Key_DefHoldTime']
             self.keys.key_repeat_delay = self.config['Key_RepeatDelay']
-
-        if self.galaxy_map:
-            self.galaxy_map.SystemSelectDelay = self.config['GalMap_SystemSelectDelay']
 
         self.target_align_outer_lim = self.config['target_align_outer_lim']
         self.target_align_inner_lim = self.config['target_align_inner_lim']
@@ -3501,7 +3434,7 @@ class EDAutopilot:
         self.ship_control.pitch_up_down(20)
         return True
 
-    def waypoint_undock_seq(self):
+    def undock_seq(self):
         self.update_ap_status("Executing Undocking/Launch")
 
         # Store current location (on planet or in space)
@@ -3647,11 +3580,6 @@ class EDAutopilot:
 
         return True
 
-    def waypoint_assist(self, keys, scr_reg):
-        """ Processes the waypoints, performing jumps and sc assist if going to a station
-        also can then perform trades if specific in the waypoints file."""
-        self.waypoint.waypoint_assist(keys, scr_reg)
-
     def jump_to_system(self, scr_reg) -> bool:
         """ Jumps to the currently targeted system. Returns True if we successfully travel there, else False. """
         # Disabled the below because when docking, after a system was selected, the status file did not update, so the
@@ -3673,9 +3601,9 @@ class EDAutopilot:
             self.ap_ckb('log', "A valid destination system is not selected.")
             return False
 
-        # if we are starting the waypoint docked at a station, we need to undock first
+        # if we are starting docked at a station, we need to undock first
         if self.status.get_flag(FlagsDocked) or self.status.get_flag(FlagsLanded):
-            self.waypoint_undock_seq()
+            self.undock_seq()
 
         # Ensure we are in supercruise
         self.sc_engage(False)
@@ -3690,15 +3618,14 @@ class EDAutopilot:
     def supercruise_to_station(self, scr_reg, station_name: str) -> bool:
         """ Supercruise to the specified target, which may be a station, FC, body, signal source, etc.
         Returns True if we travel successfully travel there, else False. """
-        # If waypoint file has a Station Name associated then attempt targeting it
         self.update_ap_status(f"Targeting Station: {station_name}")
         # res = self.nav_panel.lock_destination(station_name)
         # if not res:
         #    return False
 
-        # if we are starting the waypoint docked at a station, we need to undock first
+        # if we are starting docked at a station, we need to undock first
         if self.status.get_flag(FlagsDocked) or self.status.get_flag(FlagsLanded):
-            self.waypoint_undock_seq()
+            self.undock_seq()
 
         # Ensure we are in supercruise
         self.sc_engage(False)
@@ -3729,15 +3656,15 @@ class EDAutopilot:
         # TODO - can we enable this? Seems like a better way
         # if nav_route_parser.get_last_system() is not None:
         if self.jn.ship_state()['target']:
-            # if we are starting the waypoint docked at a station, we need to undock first
+            # if we are starting docked at a station, we need to undock first
             if self.status.get_flag(FlagsDocked) or self.status.get_flag(FlagsLanded):
                 self.update_overlay()
-                self.waypoint_undock_seq()
+                self.undock_seq()
 
         # If we are already in supercruise (e.g. manual restart), check if the sun is ahead
         # and perform the same post-jump sequence: refuel (which includes sun_avoid with
         # correct brightness threshold), then position to fly past the star
-        # TODO - Add this to SC Assist and Waypoint Assist?
+        # TODO - Add this to SC Assist?
         if self._is_in_supercruise_or_space() and self.is_sun_dead_ahead(scr_reg):
             refueled = self.refuel_new(scr_reg)
             self.update_ap_status("Maneuvering")
@@ -3837,10 +3764,10 @@ class EDAutopilot:
         #     # Quick calibrate the compass
         #     self.quick_calibrate_compass()
 
-        # if we are starting the waypoint docked at a station or landed, we need to undock/takeoff first
+        # if we are starting docked at a station or landed, we need to undock/takeoff first
         if self.status.get_flag(FlagsDocked) or self.status.get_flag(FlagsLanded):
             self.update_overlay()
-            self.waypoint_undock_seq()
+            self.undock_seq()
 
         # Ensure we are in supercruise
         self.sc_engage(False)
@@ -3946,70 +3873,6 @@ class EDAutopilot:
 
         self.ap_ckb('log+vce', "Supercruise Assist complete")
 
-    def robigo_assist(self):
-        self.robigo.loop(self)
-
-    # Simply monitor for Shields down so we can boost away or our fighter got destroyed
-    # and thus redeploy another one
-    def afk_combat_loop(self):
-        while True:
-            if not self.afk_combat.check_shields_up():
-                set_focus_elite_window()
-                self.vce.say("Shields down, evading")
-                self.afk_combat.evade()
-                # after supercruise the menu is reset to top
-                self.afk_combat.launch_fighter()  # at new location launch fighter
-                break
-
-            if self.afk_combat.check_fighter_destroyed():
-                set_focus_elite_window()
-                self.vce.say("Fighter Destroyed, redeploying")
-                self.afk_combat.launch_fighter()  # assuming two fighter bays
-
-        self.vce.say("Terminating AFK Combat Assist")
-
-    def dss_assist(self):
-        while True:
-            sleep(0.5)
-            if self.jn.ship_state()['status'] == 'in_supercruise':
-                cur_star_system = self.jn.ship_state()['cur_star_system']
-                if cur_star_system != self._prev_star_system:
-                    self.update_ap_status("DSS Scan")
-                    self.ap_ckb('log', 'DSS Scan: '+cur_star_system)
-                    set_focus_elite_window()
-                    self.honk()
-                    self._prev_star_system = cur_star_system
-                    self.update_ap_status("Idle")
-
-    def single_waypoint_assist(self):
-        """ Travel to a system or station or both."""
-        if self._single_waypoint_system == "" and self._single_waypoint_station == "":
-            return False
-
-        if self._single_waypoint_system != "":
-            self.ap_ckb('log+vce', f"Targeting system {self._single_waypoint_system}.")
-            # Select destination in galaxy map based on name
-            res = self.galaxy_map.set_gal_map_destination_text(self, self._single_waypoint_system, self.jn.ship_state)
-            if res:
-                self.ap_ckb('log', f"System has been targeted.")
-            else:
-                self.ap_ckb('log+vce', f"Unable to target {self._single_waypoint_system} in Galaxy Map.")
-                return False
-
-            # Jump to destination
-            res = self.jump_to_system(self.scrReg)
-            if res is False:
-                return False
-
-        if self._single_waypoint_station != "":
-            res = self.nav_panel.lock_destination(self._single_waypoint_station)
-            if not res:
-               return False
-
-            res = self.supercruise_to_station(self.scrReg, self._single_waypoint_station)
-            if res is False:
-                return False
-
     def ctype_async_raise(self, thread_obj, exception):
         """ Raising an exception to the engine loop thread, so we can terminate its execution
         if thread was in a sleep, the exception seems to not be delivered
@@ -4055,38 +3918,6 @@ class EDAutopilot:
             if self.ap_thread is not None and self.ap_thread.is_alive():
                 self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.sc_assist_enabled = enable
-
-    def set_waypoint_assist(self, enable=True):
-        if not enable and self.waypoint_assist_enabled:
-            if self.ap_thread is not None and self.ap_thread.is_alive():
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-        self.waypoint_assist_enabled = enable
-
-    def set_robigo_assist(self, enable=True):
-        if not enable and self.robigo_assist_enabled:
-            if self.ap_thread is not None and self.ap_thread.is_alive():
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-        self.robigo_assist_enabled = enable
-
-    def set_afk_combat_assist(self, enable=True):
-        if not enable and self.afk_combat_assist_enabled:
-            if self.ap_thread is not None and self.ap_thread.is_alive():
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-        self.afk_combat_assist_enabled = enable
-
-    def set_dss_assist(self, enable=True):
-        if not enable and self.dss_assist_enabled:
-            if self.ap_thread is not None and self.ap_thread.is_alive():
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-        self.dss_assist_enabled = enable
-
-    def set_single_waypoint_assist(self, system: str, station: str, enable=True):
-        if not enable and self.single_waypoint_enabled:
-            if self.ap_thread is not None and self.ap_thread.is_alive():
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-        self._single_waypoint_system = system
-        self._single_waypoint_station = station
-        self.single_waypoint_enabled = enable
 
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
@@ -4233,101 +4064,6 @@ class EDAutopilot:
                 logger.debug("Completed sc_assist")
                 self.sc_assist_enabled = False
                 self.ap_ckb('sc_stop')
-                self.update_overlay()
-
-            elif self.waypoint_assist_enabled:
-                logger.debug("Running waypoint_assist")
-
-                set_focus_elite_window()
-                self.update_overlay()
-                self.jump_cnt = 0
-                self.refuel_cnt = 0
-                self.total_dist_jumped = 0
-                self.total_jumps = 0
-                try:
-                    self.waypoint_assist(self.keys, self.scrReg)
-                except EDAP_Interrupt:
-                    logger.debug("Caught stop exception")
-                    self.keys.release_all_keys()
-                except Exception as e:
-                    print("Trapped generic:"+str(e))
-                    logger.debug("Waypoint Assist trapped generic:"+str(e))
-                    traceback.print_exc()
-
-                self.stop_sco_monitoring()
-                self.waypoint_assist_enabled = False
-                self.ap_ckb('waypoint_stop')
-                self.update_overlay()
-
-            elif self.robigo_assist_enabled:
-                logger.debug("Running robigo_assist")
-                set_focus_elite_window()
-                self.update_overlay()
-                try:
-                    self.robigo_assist()
-                except EDAP_Interrupt:
-                    logger.debug("Caught stop exception")
-                    self.keys.release_all_keys()
-                except Exception as e:
-                    print("Trapped generic:"+str(e))
-                    logger.debug("Robigo Assist trapped generic:"+str(e))
-                    traceback.print_exc()
-
-                self.stop_sco_monitoring()
-                self.robigo_assist_enabled = False
-                self.ap_ckb('robigo_stop')
-                self.update_overlay()
-
-            elif self.afk_combat_assist_enabled:
-                self.update_overlay()
-                try:
-                    self.afk_combat_loop()
-                except EDAP_Interrupt:
-                    logger.debug("Stopping afk_combat")
-                    self.keys.release_all_keys()
-                except Exception as e:
-                    print("Trapped generic:" + str(e))
-                    logger.debug("AFK Combat Assist trapped generic:" + str(e))
-                    traceback.print_exc()
-
-                self.stop_sco_monitoring()
-                self.afk_combat_assist_enabled = False
-                self.ap_ckb('afk_stop')
-                self.update_overlay()
-
-            elif self.dss_assist_enabled:
-                logger.debug("Running dss_assist")
-                set_focus_elite_window()
-                self.update_overlay()
-                try:
-                    self.dss_assist()
-                except EDAP_Interrupt:
-                    logger.debug("Stopping DSS Assist")
-                    self.keys.release_all_keys()
-                except Exception as e:
-                    print("Trapped generic:" + str(e))
-                    logger.debug("DSS Assist trapped generic:" + str(e))
-                    traceback.print_exc()
-
-                self.dss_assist_enabled = False
-                self.ap_ckb('dss_stop')
-                self.update_overlay()
-
-            elif self.single_waypoint_enabled:
-                self.update_overlay()
-                try:
-                    self.single_waypoint_assist()
-                except EDAP_Interrupt:
-                    logger.debug("Stopping Single Waypoint Assist")
-                    self.keys.release_all_keys()
-                except Exception as e:
-                    print("Trapped generic:" + str(e))
-                    logger.debug("Single Waypoint Assist trapped generic:" + str(e))
-                    traceback.print_exc()
-
-                self.stop_sco_monitoring()
-                self.single_waypoint_enabled = False
-                self.ap_ckb('single_waypoint_stop')
                 self.update_overlay()
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
