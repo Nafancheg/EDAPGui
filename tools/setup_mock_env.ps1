@@ -45,7 +45,12 @@ foreach ($d in @($gfxDir, $plyDir, $bndDir, $jrnDir)) {
 }
 
 function Write-File($path, $content) {
-    Set-Content -Path $path -Value $content -Encoding UTF8
+    # Write BOM-less UTF-8 explicitly. Note: `Set-Content -Encoding UTF8`
+    # emits a BOM under Windows PowerShell 5.1 (it is BOM-less only in
+    # PowerShell 7+), and a leading BOM makes both expat/xmltodict and
+    # json.loads reject the file. WriteAllText with UTF8Encoding($false)
+    # is BOM-less on every PowerShell edition.
+    [System.IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "  wrote $path"
 }
 
