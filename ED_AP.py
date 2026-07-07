@@ -26,6 +26,7 @@ from EDAP_EDMesg_Server import EDMesgServer
 from EDGraphicsSettings import EDGraphicsSettings
 from EDShipControl import EDShipControl, CompassTargetOffset
 from EDlogger import logging
+from services.fuel_service import FuelService
 import Image_Templates
 import Screen
 import Screen_Regions
@@ -177,6 +178,7 @@ class EDAutopilot:
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
+        self.fuel_service = FuelService(self)
         self.nav_panel = EDNavigationPanel(self, self.scr, self.keys, cb)
 
         self.mesg_server = EDMesgServer(self, cb)
@@ -2517,237 +2519,6 @@ class EDAutopilot:
 
         # a set of convience routes to pitch, rotate by specified degress
 
-    def refuel(self, scr_reg):
-        """ Check if refueling needed, ensure correct start type. """
-        # TODO delete this once refuel_new is proven.
-        # Check if we have a fuel scoop
-        has_fuel_scoop = self.jn.ship_state()['has_fuel_scoop']
-
-        logger.debug('refuel')
-        scoopable_stars = ['F', 'O', 'G', 'K', 'B', 'A', 'M']
-
-        if self.jn.ship_state()['status'] != 'in_supercruise':
-            logger.error('refuel=err1')
-            return False
-
-        is_star_scoopable = self.jn.ship_state()['star_class'] in scoopable_stars
-
-        # if the sun is not scoopable, then set a low low threshold so we can pick up the dull red
-        # sun types.  Since we won't scoop it doesn't matter how much we pitch up
-        # if scoopable we know white/yellow stars are bright, so set higher threshold, this will allow us to
-        #  mast out the galaxy edge (which is bright) and not pitch up too much and avoid scooping
-        if is_star_scoopable == False or not has_fuel_scoop:
-            scr_reg.set_sun_threshold(25)
-        else:
-            scr_reg.set_sun_threshold(self.config['SunBrightThreshold'])
-
-        # Lets avoid the sun, shall we
-        self.vce.say("Avoiding star")
-        self.update_ap_status("Avoiding star")
-        self.ap_ckb('log', 'Avoiding star')
-        self.sun_avoid(scr_reg, scooping=True)
-
-        if self.jn.ship_state()['fuel_percent'] < self.config['RefuelThreshold'] and is_star_scoopable and has_fuel_scoop:
-            logger.debug('refuel= start refuel')
-            self.vce.say("Refueling")
-            self.ap_ckb('log', 'Refueling')
-            self.update_ap_status("Refueling")
-
-            # mnvr into position
-            self.set_throttle_100()
-            sleep(5)
-            self.set_throttle_50()
-            sleep(1.7)
-            self.set_throttle_0(repeat=3)
-
-            self.refuel_cnt += 1
-
-            # The log will not reflect a FuelScoop until first 5 tons filled, then every 5 tons until complete
-            # if we don't scoop first 5 tons with 40 sec break, since not scooping or not fast enough or not at all, then abort
-            startime = time.time()
-            while not self.jn.ship_state()['is_scooping'] and not self.jn.ship_state()['fuel_percent'] == 100:
-                # check if we are being interdicted
-                interdicted = self.interdiction_check()
-                if interdicted:
-                    # Continue journey after interdiction
-                    self.set_throttle_0()
-
-                if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                    self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
-                    return False
-
-            logger.debug('refuel= wait for refuel')
-
-            # We started fueling, so lets give it another timeout period to fuel up
-            startime = time.time()
-            while not self.jn.ship_state()['fuel_percent'] == 100:
-                # check if we are being interdicted
-                interdicted = self.interdiction_check()
-                if interdicted:
-                    # Continue journey after interdiction
-                    self.set_throttle_0()
-
-                if ((time.time()-startime) > int(self.config['FuelScoopTimeOut'])):
-                    self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
-                    return True
-                sleep(1)
-
-            logger.debug('refuel=complete')
-            return True
-
-        elif is_star_scoopable == False:
-            self.ap_ckb('log', 'Skip refuel - not a fuel star')
-            logger.debug('refuel= needed, unsuitable star')
-            self.ship_control.pitch_up_down(20)
-            return False
-
-        elif self.jn.ship_state()['fuel_percent'] >= self.config['RefuelThreshold']:
-            self.ap_ckb('log', 'Skip refuel - fuel level okay')
-            logger.debug('refuel= not needed')
-            return False
-
-        elif not has_fuel_scoop:
-            self.ap_ckb('log', 'Skip refuel - no fuel scoop fitted')
-            logger.debug('No fuel scoop fitted.')
-            self.ship_control.pitch_up_down(20)
-            return False
-
-        else:
-            self.ship_control.pitch_up_down(15)  # if not refueling pitch up somemore so we won't heat up
-            return False
-
-    def refuel_new(self, scr_reg):
-        """ Check if refueling needed, ensure correct start type. """
-        # Check if we have a fuel scoop
-        has_fuel_scoop = self.jn.ship_state()['has_fuel_scoop']
-
-        logger.debug('refuel')
-        scoopable_stars = ['F', 'O', 'G', 'K', 'B', 'A', 'M']
-
-        if self.jn.ship_state()['status'] != 'in_supercruise':
-            logger.error('refuel=err1')
-            return False
-
-        is_star_scoopable = self.jn.ship_state()['star_class'] in scoopable_stars
-
-        # if the sun is not scoopable, then set a low low threshold so we can pick up the dull red
-        # sun types.  Since we won't scoop it doesn't matter how much we pitch up
-        # if scoopable we know white/yellow stars are bright, so set higher threshold, this will allow us to
-        #  mast out the galaxy edge (which is bright) and not pitch up too much and avoid scooping
-        if is_star_scoopable == False or not has_fuel_scoop:
-            scr_reg.set_sun_threshold(25)
-        else:
-            scr_reg.set_sun_threshold(self.config['SunBrightThreshold'])
-
-        # Conditions to avoid refueling
-        avoid_star = False
-        if not is_star_scoopable:
-            self.ap_ckb('log', 'Skip refuel - not a fuel star')
-            avoid_star = True
-
-        elif (self.jn.ship_state()['fuel_percent'] == 100 or
-                self.jn.ship_state()['fuel_percent'] >= self.config['RefuelThreshold']):
-            self.ap_ckb('log', 'Skip refuel - fuel level okay')
-            avoid_star = True
-
-        elif not has_fuel_scoop:
-            self.ap_ckb('log', 'Skip refuel - no fuel scoop fitted')
-            avoid_star = True
-
-        # Check if we are avoiding this star
-        if avoid_star:
-            # Let's avoid the star, shall we
-            self.update_ap_status("Avoiding star")
-            self.ap_ckb('log+vce', 'Avoiding star')
-
-            # Avoid star
-            self.sun_avoid(scr_reg, scooping=False)
-            # Move and additional 20 deg up to avoid scooping
-            self.ship_control.pitch_up_down(20)
-            return False
-
-        # Continue refueling operation
-        self.ap_ckb('log+vce', 'Preparing for refuel')
-        self.update_ap_status("Preparing for refuel")
-        # Avoid star
-        self.sun_avoid(scr_reg, scooping=True)
-
-        # mnvr into position
-        self.set_throttle_100()
-        endtime = time.time() + 5
-        while time.time() < endtime:
-            sleep(0.25)
-            # Abort the approach if we start overheating - we are too close to the star
-            if self.status.get_flag(FlagsOverHeating):
-                self.vce.say(self.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
-                self.overheat_escape(scr_reg)
-                return False
-        self.set_throttle_50()
-        sleep(1.7)
-        self.set_throttle_0(repeat=3)
-
-        self.refuel_cnt += 1
-
-        # The log will not reflect a FuelScoop until first 5 tons filled, then every 5 tons until complete. If we
-        # don't scoop first 5 tons with 40 sec break, since not scooping or not fast enough or not at all, then abort.
-        startime = time.time()
-        while not self.status.get_flag(FlagsScoopingFuel):
-            # check if we are being interdicted
-            interdicted = self.interdiction_check()
-            if interdicted:
-                # Continue journey after interdiction
-                self.set_throttle_0()
-
-            # Abort scooping if we are overheating
-            if self.status.get_flag(FlagsOverHeating):
-                self.vce.say(self.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
-                self.overheat_escape(scr_reg)
-                return False
-
-            if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
-                return False
-
-        logger.debug('refuel=refueling')
-        self.ap_ckb('log+vce', 'Refueling')
-        self.update_ap_status("Refueling")
-
-        # The ship is stopped while scooping - the perfect moment to run the FSS/ELW scan
-        # instead of stopping again later in position() (saves an accelerate-brake cycle).
-        if self.config["ElwScannerEnable"] and not self.config.get('FastTravelMode', False):
-            if self.fss_detect_elw(scr_reg, restore_throttle=False):
-                self._elw_scanned_this_system = True
-
-        # We started fueling, so lets give it another timeout period to fuel up
-        startime = time.time()
-        while not self.jn.ship_state()['fuel_percent'] == 100:
-            # check if we are being interdicted
-            interdicted = self.interdiction_check()
-            if interdicted:
-                # Continue journey after interdiction
-                self.set_throttle_0()
-
-            # Stop scooping if we are overheating - keep whatever fuel we got
-            if self.status.get_flag(FlagsOverHeating):
-                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_STOP_REFUEL', 'Overheating - stopping refuel'))
-                self.overheat_escape(scr_reg)
-                return True
-
-            if (time.time() - startime) > int(self.config['FuelScoopTimeOut']):
-                self.ap_ckb('log+vce', self.locale_safe('REFUEL_ABORT_SCOOP', 'Refueling abort, insufficient scooping'))
-                self.ship_control.pitch_up_down(20)
-                return True
-
-            if not self.status.get_flag(FlagsScoopingFuel):
-                self.ap_ckb('log', 'Fuel scooping Ended')
-                self.ship_control.pitch_up_down(20)
-                return True
-            sleep(1)
-
-        self.ap_ckb('log', 'Refueling complete')
-        self.ship_control.pitch_up_down(20)
-        return True
-
     def undock_seq(self):
         self.update_ap_status("Executing Undocking/Launch")
 
@@ -2980,7 +2751,7 @@ class EDAutopilot:
         # correct brightness threshold), then position to fly past the star
         # TODO - Add this to SC Assist?
         if self._is_in_supercruise_or_space() and self.is_sun_dead_ahead(scr_reg):
-            refueled = self.refuel_new(scr_reg)
+            refueled = self.fuel_service.refuel_new(scr_reg)
             self.update_ap_status("Maneuvering")
             self.position(scr_reg, refueled)
 
@@ -3032,7 +2803,7 @@ class EDAutopilot:
                     self.ship_control.roll_clockwise_anticlockwise(off['roll'], auto_tune=self.auto_tune_rpy, cur_deg=off['roll'])
 
                 # Refuel
-                refueled = self.refuel_new(scr_reg)
+                refueled = self.fuel_service.refuel_new(scr_reg)
 
                 self.update_ap_status("Maneuvering")
 
