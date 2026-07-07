@@ -27,6 +27,7 @@ from EDGraphicsSettings import EDGraphicsSettings
 from EDShipControl import EDShipControl, CompassTargetOffset
 from EDlogger import logging
 from services.fuel_service import FuelService
+from services.jump_service import JumpService
 from services.navigation_service import NavigationService
 import Image_Templates
 import Screen
@@ -181,6 +182,7 @@ class EDAutopilot:
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
         self.fuel_service = FuelService(self)
         self.nav_service = NavigationService(self)
+        self.jump_service = JumpService(self)
         self.nav_panel = EDNavigationPanel(self, self.scr, self.keys, cb)
 
         self.mesg_server = EDMesgServer(self, cb)
@@ -1473,29 +1475,6 @@ class EDAutopilot:
         self.nav_service.compass_align(scr_reg)
         self.set_throttle_50()
 
-    def honk(self):
-        # Do the Discovery Scan (Honk)
-
-        if self.status.get_flag(FlagsAnalysisMode):
-            if self.config['DSSButton'] == 'Primary':
-                logger.debug('position=scanning')
-                self.keys.send('PrimaryFire', state=1)
-            else:
-                logger.debug('position=scanning')
-                self.keys.send('SecondaryFire', state=1)
-
-            sleep(float(self.config['Wait_DSSScan']))  # roughly 6 seconds for DSS
-
-            # stop pressing the Scanner button
-            if self.config['DSSButton'] == 'Primary':
-                logger.debug('position=scanning complete')
-                self.keys.send('PrimaryFire', state=0)
-            else:
-                logger.debug('position=scanning complete')
-                self.keys.send('SecondaryFire', state=0)
-        else:
-            self.ap_ckb('log', 'Not in analysis mode. Skipping discovery scan (honk).')
-
     def logout(self):
         """ Performs menu action to log out of game """
         self.update_ap_status("Logout")
@@ -1510,140 +1489,6 @@ class EDAutopilot:
         self.keys.send('UI_Select')
         sleep(0.5)
         self.update_ap_status("Idle")
-
-    def position(self, scr_reg, did_refuel=True):
-        """ Position() happens after a refuel and performs
-            - accelerate past sun
-            - perform Discovery scan
-            - perform fss (if enabled)
-        @param scr_reg:
-        @param did_refuel:
-        @return:
-        """
-        logger.debug('position')
-        add_time = float(self.config['Wait_PastSun'])
-
-        self.set_throttle_100()
-
-        self.vce.say("Passing star")
-
-        # Need time to move past Sun, account for slowed ship if refueled
-        pause_time = add_time
-        if self.config["EnableRandomness"]:
-            pause_time = pause_time+random.randint(0, 3)
-        # need time to get away from the Sun so heat will dissipate before we use FSD
-        pitched_away = False
-        endtime = time.time() + pause_time
-        while time.time() < endtime:
-            sleep(0.5)
-            # If we are heating up we are too close to the star - pitch further away from it
-            if not pitched_away and self.status.get_flag(FlagsOverHeating):
-                self.ap_ckb('log+vce', self.locale_safe('OVERHEAT_PITCH_AWAY', 'Overheating, pitching away from star'))
-                self.nav_service.sun_avoid(scr_reg, scooping=False)
-                self.ship_control.pitch_up_down(20)
-                pitched_away = True
-
-        fast_travel = self.config.get('FastTravelMode', False)
-        if fast_travel:
-            # Fast Travel - no scanning, but the ship still needs the full escape time at
-            # 100% throttle. Without it we turn back towards the target (often near the
-            # star) far too close to it and fly into the star.
-            sleep(float(self.config['Wait_HeatDissipate']))
-        elif self.config["ElwScannerEnable"] and not self._elw_scanned_this_system:
-            # Not scanned during the refuel stop - stop and scan here
-            self.fss_detect_elw(scr_reg)
-            if self.config["EnableRandomness"]:
-                sleep(random.randint(0, 3))
-            sleep(3)
-        else:
-            sleep(float(self.config['Wait_HeatDissipate']))  # since not doing FSS, need to give a little more time to get away from Sun, for heat
-
-        self.vce.say("Maneuvering")
-
-        logger.debug('position=complete')
-        return True
-
-    def jump(self, scr_reg):
-        """ jump() happens after we are aligned to Target
-        TODO: nees to check for Thargoid interdiction and their wave that would shut us down,
-        if thargoid, then we wait until reboot and continue on.. go back into FSD and align
-        @param scr_reg:
-        @return:
-        """
-        logger.debug('jump')
-
-        self.vce.say("Frameshift Jump")
-
-        # Stop SCO monitoring
-        self.stop_sco_monitoring()
-
-        jump_tries = self.config['JumpTries']
-        for i in range(jump_tries):
-
-            logger.debug('jump= try:'+str(i))
-            if not self._is_in_supercruise_or_space():
-                logger.error('Not ready to FSD jump. jump=err1')
-                raise Exception('not ready to jump')
-            sleep(0.5)
-            logger.debug('jump= start fsd')
-
-            # Initiate FSD Jump
-            self.keys.send('HyperSuperCombination')
-
-            res = self.status.wait_for_flag_on(FlagsFsdCharging, 5)
-            if not res:
-                logger.error('FSD failed to charge.')
-                # Charging is blocked while fuel scooping or overheating near the star.
-                # Get away from the star and realign before retrying, otherwise we keep
-                # flying towards the star at 100% throttle with the FSD refusing to charge.
-                if (self.status.get_flag(FlagsScoopingFuel) or self.status.get_flag(FlagsOverHeating)
-                        or self.nav_service.is_sun_dead_ahead(scr_reg)):
-                    self.ap_ckb('log+vce', self.locale_safe('JUMP_BLOCKED_STAR', 'FSD blocked by the star, escaping'))
-                    self.nav_service.sun_avoid(scr_reg, scooping=False)
-                    self.set_throttle_100()
-                    sleep(float(self.config['Wait_PastSun']))
-                    self.nav_service.mnvr_to_target(scr_reg)
-                continue
-
-            res = self.status.wait_for_flag_on(FlagsFsdJump, 30)
-            if not res:
-                logger.warning('FSD failure to start jump timeout.')
-                self.nav_service.mnvr_to_target(scr_reg)  # attempt realign to target
-                continue
-
-            logger.debug('jump= in jump')
-            # Wait for jump to complete. Should never err
-            res = self.status.wait_for_flag_off(FlagsFsdJump, 360)
-            if not res:
-                logger.error('FSD failure to complete jump timeout.')
-                continue
-
-            logger.debug('jump= speed 0')
-            self.jump_cnt = self.jump_cnt+1
-            self.set_throttle_0(repeat=3)  # Let's be triply sure that we set speed to 0% :)
-            sleep(float(self.config['Wait_AfterJump']))  # wait after jump to allow graphics to stablize and accept inputs
-            logger.debug('jump=complete')
-
-            # Check EDSM online for the discovery status of this system in the background
-            if self.config.get('EDSMCheckEnable', True):
-                self.edsm_undiscovered = False
-                self.edsm_info = self.locale_safe('EDSM_CHECKING', 'EDSM: checking...')
-                threading.Thread(target=self.edsm_check_system,
-                                 args=(self.jn.ship_state()['location'],), daemon=True).start()
-
-            # New system - the ELW scan has not run here yet
-            self._elw_scanned_this_system = False
-
-            # Start SCO monitoring ready when we drop back to SC.
-            self.start_sco_monitoring()
-
-            # We completed the jump
-            return True
-
-        logger.error(f'FSD Jump failed {jump_tries} times. jump=err2')
-        raise Exception("FSD Jump failure")
-
-        # a set of convience routes to pitch, rotate by specified degress
 
     def undock_seq(self):
         self.update_ap_status("Executing Undocking/Launch")
@@ -1820,7 +1665,7 @@ class EDAutopilot:
         self.sc_engage(False)
 
         # Route sent...  FSD Assist to that destination
-        fin = self.fsd_assist(scr_reg)
+        fin = self.jump_service.fsd_assist(scr_reg)
         if fin == FSDAssistReturn.Failed:
             return False
 
@@ -1852,110 +1697,6 @@ class EDAutopilot:
             return False
 
         return True
-
-    def fsd_assist(self, scr_reg) -> FSDAssistReturn:
-        """ FSD Route Assist. Jumps repeatedly to the destination system then returns.
-        @return: True when arrived in system and no in-system target exists. False when
-        arrived in system and an in-system target does exist."""
-        # TODO - can we enable this? Seems like a better way
-        # nav_route_parser = NavRouteParser()
-        logger.debug('self.jn.ship_state='+str(self.jn.ship_state()))
-
-        starttime = time.time()
-        starttime -= 20  # to account for first instance not doing positioning
-
-        # TODO - can we enable this? Seems like a better way
-        # if nav_route_parser.get_last_system() is not None:
-        if self.jn.ship_state()['target']:
-            # if we are starting docked at a station, we need to undock first
-            if self.status.get_flag(FlagsDocked) or self.status.get_flag(FlagsLanded):
-                self.update_overlay()
-                self.undock_seq()
-
-        # If we are already in supercruise (e.g. manual restart), check if the sun is ahead
-        # and perform the same post-jump sequence: refuel (which includes sun_avoid with
-        # correct brightness threshold), then position to fly past the star
-        # TODO - Add this to SC Assist?
-        if self._is_in_supercruise_or_space() and self.nav_service.is_sun_dead_ahead(scr_reg):
-            refueled = self.fuel_service.refuel_new(scr_reg)
-            self.update_ap_status("Maneuvering")
-            self.position(scr_reg, refueled)
-
-        # Keep jumping as long as there is a system to jump to.
-        # TODO - can we enable this? Seems like a better way
-        # while nav_route_parser.get_last_system() is not None:
-        while self.jn.ship_state()['target']:
-            self.update_overlay()
-
-            if self.jn.ship_state()['status'] == 'in_space' or self.jn.ship_state()['status'] == 'in_supercruise':
-                self.update_ap_status("Align")
-
-                self.nav_service.mnvr_to_target(scr_reg)
-
-                self.update_ap_status("Jump")
-
-                self.jump(scr_reg)
-
-                # update jump counters
-                self.total_dist_jumped += self.jn.ship_state()['dist_jumped']
-                self.total_jumps = self.jump_cnt + self.jn.ship_state()['jumps_remains']
-                
-                # reset, upon next Jump the Journal will be updated again, unless last jump,
-                # so we need to clear this out
-                
-                self.jn.ship_state()['jumps_remains'] = 0
-
-                avg_time_jump = (time.time()-starttime) / self.jump_cnt
-
-                self._eta = (self.total_jumps - self.jump_cnt) * avg_time_jump
-                self._str_eta = strfdelta(tdelta=self._eta, inputtype='seconds')
-
-                self.update_overlay()
-
-                self.ap_ckb('jumpcount', "Dist: {:,.1f}".format(self.total_dist_jumped)+"ly" +
-                            "  Jumps: {}of{}".format(self.jump_cnt, self.total_jumps)+"  @{}s/j".format(int(avg_time_jump)) +
-                            "  Fu#: "+str(self.refuel_cnt) + " ETA: "+self._str_eta)
-                self.ap_ckb('log', 'ETA (to System): '+self._str_eta)
-
-                # Do the Discovery Scan (Honk). Skipped in Fast Travel mode.
-                if not self.config.get('FastTravelMode', False):
-                    self.honk_thread = threading.Thread(target=self.honk, daemon=True)
-                    self.honk_thread.start()
-
-                # Rotate destination to roughly the top if we have a destination
-                # Should make it easier to get to the destination the other side of the star
-                off = self.nav_service.get_compass_target_offset()
-                if off:
-                    self.ship_control.roll_clockwise_anticlockwise(off['roll'], auto_tune=self.auto_tune_rpy, cur_deg=off['roll'])
-
-                # Refuel
-                refueled = self.fuel_service.refuel_new(scr_reg)
-
-                self.update_ap_status("Maneuvering")
-
-                self.position(scr_reg, refueled)
-
-                if self.jn.ship_state()['fuel_percent'] < self.config['FuelThreasholdAbortAP']:
-                    self.ap_ckb('log', "AP Aborting, low fuel")
-                    self.vce.say("AP Aborting, low fuel")
-                    return FSDAssistReturn.Failed
-
-        sleep(2)  # wait until screen stabilizes from possible last positioning
-
-        # if there is no destination defined, we are done
-        if not self.have_destination(scr_reg):
-            self.set_throttle_0()
-            self.ap_ckb('log+vce', f"Destination reached, distance jumped:"+str(int(self.total_dist_jumped))+" lightyears")
-            if self.config["AutomaticLogout"]:
-                sleep(5)
-                self.logout()
-            return FSDAssistReturn.Complete
-        # else there is a destination in System, so let jump over to SC Assist
-        else:
-            self.set_throttle_100()
-            self.ap_ckb('log+vce', f"System reached, preparing for supercruise")
-            sleep(1)
-            return FSDAssistReturn.Partial
 
     def sc_assist(self, scr_reg, do_docking=True):
         """ Supercruise Assist loop to travel to target in system and perform autodock.
@@ -2231,7 +1972,7 @@ class EDAutopilot:
                 fin = True
                 # could be deep in call tree when user disables FSD, so need to trap that exception
                 try:
-                    fin = self.fsd_assist(self.scrReg)
+                    fin = self.jump_service.fsd_assist(self.scrReg)
                 except EDAP_Interrupt:
                     logger.debug("Caught stop exception")
                     self.keys.release_all_keys()
