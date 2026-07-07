@@ -54,7 +54,7 @@ class NavigationService:
             self.ap.keys.send('UseBoostJuice')
 
         # Ensure we are in supercruise
-        self.ap.sc_engage(True)
+        self.ap.docking_service.sc_engage(True)
 
         # Update journal flag.
         self.ap.jn.ship_state()['interdicted'] = False  # reset flag

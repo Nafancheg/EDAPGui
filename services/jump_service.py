@@ -195,7 +195,7 @@ class JumpService:
             # if we are starting docked at a station, we need to undock first
             if self.ap.status.get_flag(FlagsDocked) or self.ap.status.get_flag(FlagsLanded):
                 self.ap.update_overlay()
-                self.ap.undock_seq()
+                self.ap.docking_service.undock_seq()
 
         # If we are already in supercruise (e.g. manual restart), check if the sun is ahead
         # and perform the same post-jump sequence: refuel (which includes sun_avoid with
