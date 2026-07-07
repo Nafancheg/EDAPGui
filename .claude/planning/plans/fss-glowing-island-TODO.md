@@ -93,12 +93,18 @@
 
 ### 1.5 — Конфиг и локализация
 
-- [ ] 🔵 [INLINE] `ED_AP.py` дефолтный конфиг (`:351-428`): убрать `HotKey_StartRobigo`, `Robigo_Single_Loop`, `AFKCombat_*`, `TCEDestinationFilepath`, `EDMesg*Port`, `GalMap_*`, waypoint-ключи. Добавить `ELWAdvisorEnabled: True`.
-- [ ] 🐤 [DELEGATE] Вычистить `locales/{de,en,es,fr,ru}.json` от строк удалённых фич (Robigo/AFK/TCE/Waypoint/DSS/Auto-FSS, включая `AFSS_BUSY`). **СОХРАНИТЬ** все `ELW_*` строки (напр. `ELW_FSS_NOT_OPEN`) — нужны ELW-советнику. Задача самодостаточна: дать агенту список ключей-на-удаление и список-на-сохранение, 5 файлов, механическая сверка. Агент возвращает: какие ключи удалил в каждом файле.
+- [x] 🔵 [INLINE] `ED_AP.py` дефолтный конфиг: периферийные ключи удалены ещё в 1.2; перепроверено grep'ом — 0 совпадений Robigo/AFKCombat/TCE/GalMap/Waypoint. `EDMesg*Port` **сохранены** (EDMesg остаётся — их присутствие в этом списке было ошибкой плана). `ELWAdvisorEnabled` **не добавлен** — перенесён в Фазу 2.6 вместе с тумблером/сервисом, иначе ключ повиснет полу-подключённым. *(2026-07-07, коммита не потребовалось)*
+- [x] 🐤 [DELEGATE→Sonnet] Вычищены `locales/{de,en,es,fr,ru}.json`: 104 ключа × 5 файлов = 520 удалений (Auto-FSS/AFSS вкл. `AFSS_BUSY`, TCE, `WPT_*`, Robigo, AFK, DSS Assist, GalMap, `INT_PNL_*`, `STN_SVCS`/`COMMODITIES`, Colonization). Все `ELW_*`/`FSS_HONK_*`/`NAV_PNL_*`/honk сохранены. QA-субагент (read-only) подтвердил: JSON валиден, 5×252 ключа идентичны, 174 ключа из кода все есть в en.json (0 висячих ссылок). Коммит `725bf6b`. *(2026-07-07)*
 
-### Контроль конца Фазы 1 (частично)
-- [ ] 🔵 [INLINE] `python -c "import EDAPGui"` без ошибок.
-- [ ] 🟣 [INLINE] Запуск GUI: окно открывается, вкладки = минимальный набор (Main FSD/SC, Settings, Game, Debug/Test урезанный, Calibration + тумблер ELW).
+### Контроль конца Фазы 1 (ГОТОВО, 2026-07-07)
+- [x] ⚠️ **Дозачистка Auto-FSS (была в плане 1.1, но без чекбокса в TODO — чуть не потерялась):** блок Auto-FSS (~660 строк) всё ещё оставался в `ED_AP.py` (1145–1822) + поля `_afss_*` в `__init__`, плюс GUI-хвосты (`test_auto_fss_click`/`auto_fss_scan_one_click`) и ключ `GalMap_SystemSelectDelay` в `EDAPGui.py`. Удалены целиком, ELW-советник (`fss_detect_elw`/`test_fss_scan`) не тронут. Коммит `a1b9931`.
+- [x] 🔵 [INLINE] `python -c "import EDAPGui"` без ошибок.
+- [x] 🔵 [INLINE] Запуск GUI (mock-env): окно открывается, стабильно 12с, без traceback (только baseline-WARNING про отсутствие окна ED + загрузка OCR). Вкладки = Main/Settings/Game/Debug-Test/Calibration — TCE/Colonization/Waypoints удалены. Тумблер ELW перенесён в 2.6.
+- [x] 🛠️ **Побочно (разблокировало GUI-верификацию):** `tools/setup_mock_env.ps1` писал mock-файлы с UTF-8 BOM под Windows PowerShell 5.1 → `expat`/`json.loads` их отвергали, GUI падал на старте под 5.1. Переведён на BOM-независимую запись (`UTF8Encoding($false)`). Коммит `86e046c`.
+
+**Открытый вопрос из прошлой сессии закрыт:** пользователь подтвердил — «GUI не работает / ошибка mouse input» больше НЕ воспроизводится (причина осталась неустановленной; при рецидиве — снять точный текст ошибки).
+
+**Новые правила работы (в память):** (1) для не-дефолтной модели сам поднимаю субагента нужной модели, не прошу пользователя жать `/model` — [[feedback-delegate-model-via-subagent]]; (2) после каждого кодового субагента — read-only QA-субагент с PASS/FAIL-отчётом до коммита — [[feedback-qa-subagent-before-commit]].
 
 ---
 
