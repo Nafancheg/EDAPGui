@@ -110,7 +110,7 @@ class FuelService:
         # The ship is stopped while scooping - the perfect moment to run the FSS/ELW scan
         # instead of stopping again later in position() (saves an accelerate-brake cycle).
         if self.ap.config["ElwScannerEnable"] and not self.ap.config.get('FastTravelMode', False):
-            if self.ap.fss_detect_elw(scr_reg, restore_throttle=False):
+            if self.ap.elw_advisor.fss_detect_elw(scr_reg, restore_throttle=False):
                 self.ap._elw_scanned_this_system = True
 
         # We started fueling, so lets give it another timeout period to fuel up

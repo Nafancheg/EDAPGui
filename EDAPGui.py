@@ -675,7 +675,7 @@ class APGui:
 
     def test_fss_click(self):
         """ Mini panel FSS test: stop, open the FSS, run the ELW detection and report the verdict. """
-        threading.Thread(target=self.ed_ap.test_fss_scan, daemon=True).start()
+        threading.Thread(target=self.ed_ap.elw_advisor.test_fss_scan, daemon=True).start()
 
     def t(self, key: str, default: str) -> str:
         if key is None:

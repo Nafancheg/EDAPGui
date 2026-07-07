@@ -82,7 +82,7 @@ class JumpService:
             sleep(float(self.ap.config['Wait_HeatDissipate']))
         elif self.ap.config["ElwScannerEnable"] and not self.ap._elw_scanned_this_system:
             # Not scanned during the refuel stop - stop and scan here
-            self.ap.fss_detect_elw(scr_reg)
+            self.ap.elw_advisor.fss_detect_elw(scr_reg)
             if self.ap.config["EnableRandomness"]:
                 sleep(random.randint(0, 3))
             sleep(3)
@@ -159,7 +159,7 @@ class JumpService:
             if self.ap.config.get('EDSMCheckEnable', True):
                 self.ap.edsm_undiscovered = False
                 self.ap.edsm_info = self.ap.locale_safe('EDSM_CHECKING', 'EDSM: checking...')
-                threading.Thread(target=self.ap.edsm_check_system,
+                threading.Thread(target=self.ap.elw_advisor.edsm_check_system,
                                  args=(self.ap.jn.ship_state()['location'],), daemon=True).start()
 
             # New system - the ELW scan has not run here yet
