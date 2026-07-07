@@ -1,25 +1,27 @@
-# EDAutopilot — Web UI Mockup
+# EDAutopilot — макет веб-интерфейса
 
-Interactive prototype for a redesigned EDAutopilot GUI, styled after an
-Airbus A320 MCDU (Multifunction Control Display Unit).
+Интерактивный прототип переработанного GUI EDAutopilot, стилизованного под
+Airbus A320 MCDU (Multifunction Control Display Unit — бортовой компьютер).
 
-## Files
+## Файлы
 
-- `EDAutopilot.dc.html` — interactive prototype (`.dc` component format).
-  Contains the layout, styling, and demo logic (mode toggles, keypad,
-  scrolling log, Sun Pitch counter).
-- `support.js` — runtime library required to render the `.dc` component.
-- `uploads/autopilot-interface.png` — final mockup of the full interface.
-- `uploads/pasted-*.png` — reference photos of a real A320 MCDU that
-  inspired the visual language.
+- `EDAutopilot.dc.html` — интерактивный прототип (формат компонента `.dc`).
+  Содержит вёрстку, стили и демо-логику (тумблеры режимов, клавиатуру,
+  прокручиваемый лог, счётчик Sun Pitch).
+- `support.js` — библиотека рантайма, нужна для рендера компонента `.dc`.
+- `uploads/autopilot-interface.png` — итоговый макет всего интерфейса.
+- `uploads/pasted-*.png` — фото реального A320 MCDU, послужившего
+  визуальным референсом.
 
-## Design notes
+## Заметки по дизайну
 
-- Palette: near-black background (`#0a0a0a`) with amber accent (`#E8973E`,
-  classic phosphor-display color) and blue (`#5f96d6`) for status text.
-- Fonts: `IBM Plex Mono` for UI chrome, `VT323` (pixel CRT) for the screens.
-- MCDU screens use inner shadow + radial-gradient scanlines + text glow to
-  read as CRT displays, with Line Select Keys (LSK) down each side.
+- Палитра: почти чёрный фон (`#0a0a0a`), янтарный акцент (`#E8973E` —
+  классический цвет фосфорных дисплеев) и голубой (`#5f96d6`) для статусов.
+- Шрифты: `IBM Plex Mono` для хрома интерфейса, `VT323` (пиксельный CRT)
+  для «экранов».
+- Экраны MCDU используют внутреннюю тень, radial-gradient «сканлайны» и
+  свечение текста, чтобы читаться как ЭЛТ-дисплеи, с рядами Line Select
+  Keys (LSK) по бокам.
 
-This is a visual/interaction reference only; it is not wired into the
-Python (Tkinter) application.
+Это только визуальный/интерактивный референс; в Python-приложение (Tkinter)
+он не встроен.
