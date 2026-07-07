@@ -11,7 +11,7 @@ Multi-stage project on ED_Autopilot, branch `cleanup-decompose-avionics`. Goal: 
 
 **Two planning docs** (in `C:\Users\nafan\.claude\plans\`):
 - `fss-glowing-island.md` — the WHY/WHAT (rationale, boundaries). Verified against real code; 6 discrepancies fixed (EDFSS.py is an ELW-advisor dependency that stays; `ship_configs` is a dict in `EDAP_data.py:213+` NOT a json file; NavRouteParser already wired; etc.).
-- `fss-glowing-island-TODO.md` — the HOW/WHO: phased checklist with per-task model tags (🐤 Haiku mechanical / 🔵 Sonnet code edits / 🟣 Opus architecture). Delegate to a subagent ONLY when self-contained (subagents cold-start and re-read context); otherwise do it inline switching `/model`.
+- `fss-glowing-island-TODO.md` — the HOW/WHO: phased checklist with per-task model tags (🐤 Haiku mechanical / 🔵 Sonnet code edits / 🟣 Opus architecture). Route ALL tasks through subagents with the model I set per those tags; never ask the user about model or to switch `/model` (see [[feedback-delegate-model-via-subagent]]). After each coding subagent, a read-only QA subagent gates the commit ([[feedback-qa-subagent-before-commit]]).
 
 **Phases:** 0 prep (done: branch + gitignore + venv + mock env), 1 remove peripherals (Robigo/AFK/TCE/Waypoint/DSS/EDMesg/GalaxyMap/SystemMap/Auto-FSS), 2 decompose ED_AP.py into services/, 3 fuel sensor-fusion (FuelState.py), 4 Watchdog+state-machine, 5 ship-profile timings, 6 focus-loss pause + click-through overlay.
 
