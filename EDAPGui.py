@@ -156,7 +156,6 @@ class APGui:
             'Past Sun Time': "Time (sec) at 100% throttle to get away \nfrom the sun after a jump.",
             'Heat Dissipate Time': "Extra time (sec) to let heat dissipate before \nusing the FSD (when ELW scanner is disabled).",
             'After Jump Wait': "Wait (sec) after a jump completes to allow \ngraphics to stabilize and accept inputs.",
-            'GalMap Select Delay': "Delay (sec) selecting the system \nwhen in the galaxy map.",
             'Planet Departure SCO Time': "SCO boost time (sec) when leaving a planet.",
             'FC Departure Time': "Extra time (sec) to fly away from a Fleet Carrier.",
         }
@@ -196,7 +195,6 @@ class APGui:
             'Past Sun Time': 'GUI_FIELD_WAIT_PAST_SUN',
             'Heat Dissipate Time': 'GUI_FIELD_WAIT_HEAT_DISSIPATE',
             'After Jump Wait': 'GUI_FIELD_WAIT_AFTER_JUMP',
-            'GalMap Select Delay': 'GUI_FIELD_GALMAP_SELECT_DELAY',
             'Planet Departure SCO Time': 'GUI_FIELD_PLANET_DEPARTURE_SCO_TIME',
             'FC Departure Time': 'GUI_FIELD_FC_DEPARTURE_TIME',
         }
@@ -276,7 +274,6 @@ class APGui:
             'Past Sun Time': 'Wait_PastSun',
             'Heat Dissipate Time': 'Wait_HeatDissipate',
             'After Jump Wait': 'Wait_AfterJump',
-            'GalMap Select Delay': 'GalMap_SystemSelectDelay',
             'Planet Departure SCO Time': 'PlanetDepartureSCOTime',
             'FC Departure Time': 'FCDepartureTime',
         }
@@ -680,16 +677,6 @@ class APGui:
         """ Mini panel FSS test: stop, open the FSS, run the ELW detection and report the verdict. """
         threading.Thread(target=self.ed_ap.test_fss_scan, daemon=True).start()
 
-    def test_auto_fss_click(self):
-        """ Mini panel auto-FSS dry run: detect unresolved signal blobs in the FSS view,
-        save an annotated debug screenshot. No scanning (calibration aid). """
-        threading.Thread(target=self.ed_ap.test_auto_fss_detect, daemon=True).start()
-
-    def auto_fss_scan_one_click(self):
-        """ Mini panel auto-FSS part B: center the nearest unresolved signal, zoom,
-        wait for the journal Scan confirmation. One body per press. """
-        threading.Thread(target=self.ed_ap.test_auto_fss_scan_one, daemon=True).start()
-
     def t(self, key: str, default: str) -> str:
         if key is None:
             return default
@@ -838,7 +825,6 @@ class APGui:
             self.ed_ap.config['Wait_PastSun'] = float(self.entries['game_waits']['Past Sun Time'].get())
             self.ed_ap.config['Wait_HeatDissipate'] = float(self.entries['game_waits']['Heat Dissipate Time'].get())
             self.ed_ap.config['Wait_AfterJump'] = float(self.entries['game_waits']['After Jump Wait'].get())
-            self.ed_ap.config['GalMap_SystemSelectDelay'] = float(self.entries['game_waits']['GalMap Select Delay'].get())
             self.ed_ap.config['PlanetDepartureSCOTime'] = float(self.entries['game_waits']['Planet Departure SCO Time'].get())
             self.ed_ap.config['FCDepartureTime'] = float(self.entries['game_waits']['FC Departure Time'].get())
 
@@ -976,7 +962,7 @@ class APGui:
         """ Creates the 'Game' tab: game control bindings, AP wait times and current game settings. """
         game_waits_entry_fields = ('FSS Detect Wait', 'Dock Approach Time', 'Ship Stop Wait',
                                    'Occluded Reposition Time', 'DSS Scan Time', 'Past Sun Time',
-                                   'Heat Dissipate Time', 'After Jump Wait', 'GalMap Select Delay',
+                                   'Heat Dissipate Time', 'After Jump Wait',
                                    'Planet Departure SCO Time', 'FC Departure Time')
 
         # Game control bindings block (left column)
