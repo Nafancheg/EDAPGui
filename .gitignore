@@ -41,5 +41,7 @@ logs/
 run.bat
 .vscode/
 
-# Claude Code local data
-.claude/
+# Claude Code local data (all local except the shared planning/memory snapshot)
+.claude/*
+!.claude/planning/
+!.claude/planning/**
