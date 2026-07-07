@@ -753,7 +753,7 @@ class APGui:
         Aligns to the target for tuning.
         @return: N/A
         """
-        self.ed_ap.compass_align(self.ed_ap.scrReg)
+        self.ed_ap.nav_service.compass_align(self.ed_ap.scrReg)
 
     def save_settings(self):
         self.entry_update(None)

@@ -56,7 +56,7 @@ class FuelService:
             self.ap.ap_ckb('log+vce', 'Avoiding star')
 
             # Avoid star
-            self.ap.sun_avoid(scr_reg, scooping=False)
+            self.ap.nav_service.sun_avoid(scr_reg, scooping=False)
             # Move and additional 20 deg up to avoid scooping
             self.ap.ship_control.pitch_up_down(20)
             return False
@@ -65,7 +65,7 @@ class FuelService:
         self.ap.ap_ckb('log+vce', 'Preparing for refuel')
         self.ap.update_ap_status("Preparing for refuel")
         # Avoid star
-        self.ap.sun_avoid(scr_reg, scooping=True)
+        self.ap.nav_service.sun_avoid(scr_reg, scooping=True)
 
         # mnvr into position
         self.ap.set_throttle_100()
@@ -75,7 +75,7 @@ class FuelService:
             # Abort the approach if we start overheating - we are too close to the star
             if self.ap.status.get_flag(FlagsOverHeating):
                 self.ap.vce.say(self.ap.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
-                self.ap.overheat_escape(scr_reg)
+                self.ap.nav_service.overheat_escape(scr_reg)
                 return False
         self.ap.set_throttle_50()
         sleep(1.7)
@@ -88,7 +88,7 @@ class FuelService:
         startime = time.time()
         while not self.ap.status.get_flag(FlagsScoopingFuel):
             # check if we are being interdicted
-            interdicted = self.ap.interdiction_check()
+            interdicted = self.ap.nav_service.interdiction_check()
             if interdicted:
                 # Continue journey after interdiction
                 self.ap.set_throttle_0()
@@ -96,7 +96,7 @@ class FuelService:
             # Abort scooping if we are overheating
             if self.ap.status.get_flag(FlagsOverHeating):
                 self.ap.vce.say(self.ap.locale_safe('REFUEL_ABORT_OVERHEAT', 'Refueling abort, overheating'))
-                self.ap.overheat_escape(scr_reg)
+                self.ap.nav_service.overheat_escape(scr_reg)
                 return False
 
             if (time.time() - startime) > int(self.ap.config['FuelScoopTimeOut']):
@@ -117,7 +117,7 @@ class FuelService:
         startime = time.time()
         while not self.ap.jn.ship_state()['fuel_percent'] == 100:
             # check if we are being interdicted
-            interdicted = self.ap.interdiction_check()
+            interdicted = self.ap.nav_service.interdiction_check()
             if interdicted:
                 # Continue journey after interdiction
                 self.ap.set_throttle_0()
@@ -125,7 +125,7 @@ class FuelService:
             # Stop scooping if we are overheating - keep whatever fuel we got
             if self.ap.status.get_flag(FlagsOverHeating):
                 self.ap.ap_ckb('log+vce', self.ap.locale_safe('OVERHEAT_STOP_REFUEL', 'Overheating - stopping refuel'))
-                self.ap.overheat_escape(scr_reg)
+                self.ap.nav_service.overheat_escape(scr_reg)
                 return True
 
             if (time.time() - startime) > int(self.ap.config['FuelScoopTimeOut']):

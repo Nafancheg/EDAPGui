@@ -226,7 +226,7 @@ class EDShipControl:
         sleep(dly)
 
         # Take current reading
-        off = self.ap.get_compass_target_offset()
+        off = self.ap.nav_service.get_compass_target_offset()
         if off:
             # Are we still too far away?
             err = sp - off['roll']
@@ -323,7 +323,7 @@ class EDShipControl:
         sleep(dly)
 
         # Take current reading
-        off = self.ap.get_compass_target_offset()
+        off = self.ap.nav_service.get_compass_target_offset()
         if off:
             # Are we still too far away?
             err = sp - off['pit']
@@ -421,7 +421,7 @@ class EDShipControl:
         sleep(dly)
 
         # Take current reading
-        off = self.ap.get_compass_target_offset()
+        off = self.ap.nav_service.get_compass_target_offset()
         if off:
             # Are we still too far away?
             err = sp - off['yaw']
@@ -467,7 +467,7 @@ class EDShipControl:
         for targ_ang in [2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0, 144.0]:
             while 1:
                 set_focus_elite_window()
-                off = self.ap.get_compass_target_offset()
+                off = self.ap.nav_service.get_compass_target_offset()
                 if not off:
                     break
 
@@ -487,7 +487,7 @@ class EDShipControl:
 
                 sleep(1)
 
-                off2 = self.ap.get_compass_target_offset()
+                off2 = self.ap.nav_service.get_compass_target_offset()
                 if not off2:
                     break
 
@@ -532,7 +532,7 @@ class EDShipControl:
         for targ_ang in [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 16.0, 32.0, 60.0, 90.0, 120.0]:
             while 1:
                 set_focus_elite_window()
-                off = self.ap.get_compass_target_offset()
+                off = self.ap.nav_service.get_compass_target_offset()
                 if not off:
                     print(f"Target lost")
                     break
@@ -552,7 +552,7 @@ class EDShipControl:
 
                 sleep(1)
 
-                off2 = self.ap.get_compass_target_offset()
+                off2 = self.ap.nav_service.get_compass_target_offset()
                 if not off2:
                     print(f"Target lost")
                     break
@@ -598,7 +598,7 @@ class EDShipControl:
         for targ_ang in [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 16.0, 32.0, 60.0, 90.0, 120.0]:
             while 1:
                 set_focus_elite_window()
-                off = self.ap.get_compass_target_offset()
+                off = self.ap.nav_service.get_compass_target_offset()
                 if not off:
                     break
 
@@ -617,7 +617,7 @@ class EDShipControl:
 
                 sleep(1)
 
-                off2 = self.ap.get_compass_target_offset()
+                off2 = self.ap.nav_service.get_compass_target_offset()
                 if not off2:
                     break
 
