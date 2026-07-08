@@ -1,0 +1,227 @@
+"""
+Headless web server for ED_Autopilot (Phase 7 vertical slice).
+
+Thin aiohttp layer over the already-headless EDAutopilot core:
+  * publishes core -> UI state (the ap_ckb callback + a 1s status snapshot)
+    over a WebSocket to every connected client, and
+  * routes UI -> core commands from the same WebSocket into the same core
+    methods the tkinter GUI used to call.
+
+No tkinter anywhere in this module. Core construction lives in the launcher
+(edap_headless.py) so this module stays importable/testable on its own.
+"""
+
+import asyncio
+import json
+import logging
+import os
+
+from aiohttp import web, WSMsgType
+
+log = logging.getLogger("edap.webserver")
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def map_ap_ckb(msg, body=None):
+    """Translate an ap_ckb (tag, body) into a JSON-friendly event dict, or
+    None if the tag should be dropped (GUI-internal signals with no meaning
+    for a web client). See docs/web_api_contract.md section 5/6."""
+    if msg in ("log", "log+vce"):
+        return {"type": "log", "text": body, "voice": msg == "log+vce"}
+    if msg == "statusline":
+        return {"type": "statusline", "text": body}
+    if msg == "jumpcount":
+        return {"type": "jumpcount", "text": body}
+    if msg == "fsd_start":
+        return {"type": "assist", "mode": "fsd", "running": True}
+    if msg == "fsd_stop":
+        return {"type": "assist", "mode": "fsd", "running": False}
+    if msg == "sc_start":
+        return {"type": "assist", "mode": "sc", "running": True}
+    if msg == "sc_stop":
+        return {"type": "assist", "mode": "sc", "running": False}
+    if msg == "update_ship_cfg":
+        return {"type": "ship_changed"}
+    # GUI-internal re-dispatch / dead nudge tags: drop them.
+    if msg in ("stop_all_assists", "up", "down", "left", "right"):
+        return None
+    # Anything unrecognised passes through generically so nothing is lost.
+    return {"type": "event", "tag": msg, "body": body}
+
+
+class Broadcaster:
+    """The ap_ckb callback (core -> UI seam) AND the WS client registry.
+
+    __call__ runs on the engine worker THREAD, so it must not touch asyncio
+    state directly; it hands (msg, body) to the loop thread-safely. A drain
+    task (started in the loop thread) maps and fans each item out to all
+    connected WebSocket clients.
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
+        self._queue: asyncio.Queue = asyncio.Queue()
+        self._clients: set[web.WebSocketResponse] = set()
+        self._drain_task: asyncio.Task | None = None
+
+    # --- called from the engine worker thread ---
+    def __call__(self, msg, body=None):
+        # Tolerate being invoked before the loop is running: call_soon_threadsafe
+        # only requires the loop object to exist, which it does (launcher creates
+        # the loop before the core).
+        try:
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, (msg, body))
+        except RuntimeError:
+            # Loop already closed during shutdown; drop the message.
+            pass
+
+    # --- asyncio side ---
+    def register(self, ws: web.WebSocketResponse):
+        self._clients.add(ws)
+
+    def unregister(self, ws: web.WebSocketResponse):
+        self._clients.discard(ws)
+
+    async def broadcast(self, event: dict):
+        if not self._clients:
+            return
+        data = json.dumps(event)
+        dead = []
+        for ws in list(self._clients):
+            try:
+                await ws.send_str(data)
+            except Exception as e:
+                log.debug("dropping dead ws client: %s", e)
+                dead.append(ws)
+        for ws in dead:
+            self._clients.discard(ws)
+
+    def start(self):
+        if self._drain_task is None:
+            self._drain_task = self._loop.create_task(self._drain_loop())
+
+    async def _drain_loop(self):
+        while True:
+            msg, body = await self._queue.get()
+            try:
+                event = map_ap_ckb(msg, body)
+                if event is not None:
+                    await self.broadcast(event)
+            except Exception:
+                log.exception("error broadcasting ap_ckb event %r", msg)
+
+    async def stop(self):
+        if self._drain_task is not None:
+            self._drain_task.cancel()
+            try:
+                await self._drain_task
+            except asyncio.CancelledError:
+                pass
+            self._drain_task = None
+
+
+async def _status_snapshot_loop(ed_ap, broadcaster: Broadcaster, interval: float = 1.0):
+    """Every `interval` seconds pull structured telemetry and broadcast it."""
+    while True:
+        try:
+            data = ed_ap.get_status_dict()
+            await broadcaster.broadcast({"type": "status_snapshot", "data": data})
+        except Exception:
+            log.exception("error building/broadcasting status_snapshot")
+        await asyncio.sleep(interval)
+
+
+async def _dispatch_command(ed_ap, ws: web.WebSocketResponse, cmd: dict):
+    """Handle a single UI -> core command. Runs on the asyncio thread, which
+    is safe: set_*_assist is thread-safe and the throttle setters are quick."""
+    name = cmd.get("cmd")
+    if name == "assist.start":
+        mode = cmd.get("mode")
+        if mode == "fsd":
+            ed_ap.set_fsd_assist(True)
+        elif mode == "sc":
+            ed_ap.set_sc_assist(True)
+        else:
+            await ws.send_str(json.dumps({"type": "error", "text": f"unknown assist mode: {mode!r}"}))
+    elif name == "assist.stop":
+        mode = cmd.get("mode")
+        if mode == "fsd":
+            ed_ap.set_fsd_assist(False)
+        elif mode == "sc":
+            ed_ap.set_sc_assist(False)
+        else:
+            await ws.send_str(json.dumps({"type": "error", "text": f"unknown assist mode: {mode!r}"}))
+    elif name == "assist.stop_all":
+        ed_ap.set_fsd_assist(False)
+        ed_ap.set_sc_assist(False)
+    elif name == "throttle.set":
+        level = cmd.get("level")
+        if level == 0:
+            ed_ap.set_throttle_0()
+        elif level == 50:
+            ed_ap.set_throttle_50()
+        elif level == 100:
+            ed_ap.set_throttle_100()
+        else:
+            await ws.send_str(json.dumps({"type": "error", "text": f"invalid throttle level: {level!r}"}))
+    elif name == "config.get":
+        await ws.send_str(json.dumps({"type": "config", "data": dict(ed_ap.config)}))
+    else:
+        await ws.send_str(json.dumps({"type": "error", "text": f"unknown command: {name!r}"}))
+
+
+def create_app(ed_ap, loop: asyncio.AbstractEventLoop):
+    """App factory. Returns (aiohttp.web.Application, Broadcaster).
+
+    The caller is responsible for having created `broadcaster` earlier (it is
+    the ap_ckb passed to the core); here we build a fresh one bound to the same
+    loop so the app owns its lifecycle. To keep the seam consistent the launcher
+    passes the SAME broadcaster it gave the core -- so we accept an existing one
+    on the app if present. For simplicity of the slice we take it from ed_ap's
+    ap_ckb if it is a Broadcaster."""
+    broadcaster = ed_ap.ap_ckb if isinstance(ed_ap.ap_ckb, Broadcaster) else Broadcaster(loop)
+    broadcaster.start()
+
+    app = web.Application()
+    app["ed_ap"] = ed_ap
+    app["broadcaster"] = broadcaster
+
+    async def handle_index(request):
+        return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+    async def handle_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        broadcaster.register(ws)
+        try:
+            await ws.send_str(json.dumps({"type": "hello"}))
+            # immediate snapshot on connect
+            try:
+                await ws.send_str(json.dumps(
+                    {"type": "status_snapshot", "data": ed_ap.get_status_dict()}))
+            except Exception:
+                log.exception("error sending initial snapshot")
+
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        cmd = json.loads(msg.data)
+                    except (ValueError, TypeError):
+                        await ws.send_str(json.dumps({"type": "error", "text": "invalid JSON"}))
+                        continue
+                    try:
+                        await _dispatch_command(ed_ap, ws, cmd)
+                    except Exception as e:
+                        log.exception("error dispatching command")
+                        await ws.send_str(json.dumps({"type": "error", "text": str(e)}))
+                elif msg.type == WSMsgType.ERROR:
+                    log.debug("ws connection error: %s", ws.exception())
+        finally:
+            broadcaster.unregister(ws)
+        return ws
+
+    app.router.add_get("/", handle_index)
+    app.router.add_get("/ws", handle_ws)
+    app.router.add_static("/static/", STATIC_DIR, name="static")
+    return app, broadcaster

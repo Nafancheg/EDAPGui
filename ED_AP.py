@@ -635,6 +635,39 @@ class EDAutopilot:
                 lines.append((f"  {nm}: {marker}", True))
         return lines
 
+    def get_status_dict(self) -> dict:
+        """ Structured telemetry snapshot, sourced from the same fields as
+        get_status_lines() but returned as machine-readable JSON-friendly data
+        (not pre-joined display strings) for the headless web server.
+        Pure/read-only: no side effects. """
+        if self.fsd_assist_enabled:
+            ap_mode = "fsd"
+        elif self.sc_assist_enabled:
+            ap_mode = "sc"
+        else:
+            ap_mode = "offline"
+
+        ship = self.jn.ship_state()
+        star_class = ship['star_class']
+
+        return {
+            "ap_mode": ap_mode,
+            "ap_state": self.ap_state,
+            "ship_status": ship['status'],
+            "fuel_percent": ship['fuel_percent'],
+            "location": ship['location'],
+            "star_class": star_class,
+            "scoopable": bool(star_class in ['F', 'O', 'G', 'K', 'B', 'A', 'M']),
+            "target": ship['target'],
+            "jumps_remaining": ship['jumps_remains'],
+            "jump_cnt": self.jump_cnt,
+            "total_jumps": self.total_jumps,
+            "total_dist_jumped": self.total_dist_jumped,
+            "eta": self._str_eta,
+            "elw_scanner": self.fss_detected if self.config["ElwScannerEnable"] else None,
+            "edsm_info": self.edsm_info or None,
+        }
+
     def update_overlay(self):
         """ Draw the overlay data on the ED Window """
         if self.config['OverlayTextEnable']:
