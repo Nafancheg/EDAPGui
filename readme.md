@@ -37,7 +37,7 @@
 - **Калибровка** — подбор масштаба шаблонов под ваше разрешение: [docs/Calibration.md](docs/Calibration.md).
 - **`DisengageUseMatch`** — старое шаблонное распознавание «PRESS TO DISENGAGE» вместо OCR (оставлено как запасной вариант).
 
-> **В процессе расчистки/декомпозиции (ветка `cleanup-decompose-avionics`):** Robigo Assist, AFK Combat Assist, TCE Integration, Waypoint Assist (+ редактор), DSS Assist, Single Waypoint Assist, Galaxy/System Map, редактор колонизации и их парсеры/тесты удалены как периферийные фичи, не относящиеся к ядру полёта. См. `ChangeLog.md`.
+> **В процессе расчистки/декомпозиции (ветка `cleanup-decompose-avionics`):** как периферийные, не относящиеся к ядру полёта, удалены: Robigo Assist, AFK Combat Assist, TCE Integration, Waypoint Assist (+ редактор), Single Waypoint Assist, DSS Assist, Galaxy/System Map, редактор колонизации, экспериментальный Auto-FSS и внешний канал управления **EDMesg** (ZeroMQ) — вместе с их парсерами/тестами. Ядро полёта также разложено из монолита `ED_AP.py` на модули `services/` (топливо/навигация/прыжки/докинг/ELW-советник). См. `ChangeLog.md`.
 
 ---
 
@@ -56,8 +56,8 @@
 ```bat
 git clone <этот репозиторий>
 cd EDAPGui
-py -3.11 -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
+py -3.11 -m venv venv
+venv\Scripts\pip install -r requirements.txt
 ```
 
 Либо просто запустить `start_ed_ap.bat` — он установит всё сам.
