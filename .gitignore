@@ -15,7 +15,6 @@
 /configs/AP.json
 /EDAPGui.exe
 .idea/
-EDMesg/__pycache__/
 simple_localization/__pycache__/
 ocr_output/
 configs/construction.json

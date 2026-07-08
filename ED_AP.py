@@ -21,7 +21,6 @@ from EDPlayerSettings import EDPlayerSettings
 from MachineLearning import MachLearn, ModelType
 from simple_localization import LocalizationManager
 
-from EDAP_EDMesg_Server import EDMesgServer
 from EDGraphicsSettings import EDGraphicsSettings
 from EDShipControl import EDShipControl, CompassTargetOffset
 from EDlogger import logging
@@ -187,12 +186,6 @@ class EDAutopilot:
         self.elw_advisor = ElwAdvisor(self)
         self.nav_panel = EDNavigationPanel(self, self.scr, self.keys, cb)
 
-        self.mesg_server = EDMesgServer(self, cb)
-        self.mesg_server.actions_port = self.config['EDMesgActionsPort']
-        self.mesg_server.events_port = self.config['EDMesgEventsPort']
-        if self.config['EnableEDMesg']:
-            self.mesg_server.start_server()
-
         # Set defaults for data read from ships config
         self.yawrate = 8.0
         self.rollrate = 80.0
@@ -346,9 +339,6 @@ class EDAutopilot:
             "Language": 'en',  # Language (matching ./locales/xx.json file)
             "OCRLanguage": 'en',  # Language for OCR detection (see OCR language doc in \docs)
             "OCRMobile": False,  # Use the mobile (light) version which is smaller and faster, but less accurate.
-            "EnableEDMesg": False,
-            "EDMesgActionsPort": 15570,
-            "EDMesgEventsPort": 15571,
             "DebugOverlay": False,
             "HotkeysEnable": False,  # Enable hotkeys
             "DebugOCR": False,  # For debug, write all OCR data to output folder
@@ -397,12 +387,6 @@ class EDAutopilot:
                 cnf['OCRLanguage'] = 'en'
             if 'OCRMobile' not in cnf:
                 cnf['OCRMobile'] = False
-            if 'EnableEDMesg' not in cnf:
-                cnf['EnableEDMesg'] = False
-            if 'EDMesgActionsPort' not in cnf:
-                cnf['EDMesgActionsPort'] = 15570
-            if 'EDMesgEventsPort' not in cnf:
-                cnf['EDMesgEventsPort'] = 15571
             if 'DebugOverlay' not in cnf:
                 cnf['DebugOverlay'] = False
             if 'HotkeysEnable' not in cnf:
