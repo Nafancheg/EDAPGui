@@ -117,14 +117,10 @@ class EDNavigationPanel:
         self.locale = self.ap.locale
         self.status_parser = StatusParser()
 
-        # Tab captions are matched against OCR of the game screen, so they
-        # must come from the game's language (screen_locale / OCRLanguage),
-        # not the language EDAP speaks to the user.
-        screen_locale = self.ap.screen_locale
-        self.navigation_tab_text = screen_locale["NAV_PNL_TAB_NAVIGATION"]
-        self.transactions_tab_text = screen_locale["NAV_PNL_TAB_TRANSACTIONS"]
-        self.contacts_tab_text = screen_locale["NAV_PNL_TAB_CONTACTS"]
-        self.target_tab_text = screen_locale["NAV_PNL_TAB_TARGET"]
+        self.navigation_tab_text = self.locale["NAV_PNL_TAB_NAVIGATION"]
+        self.transactions_tab_text = self.locale["NAV_PNL_TAB_TRANSACTIONS"]
+        self.contacts_tab_text = self.locale["NAV_PNL_TAB_CONTACTS"]
+        self.target_tab_text = self.locale["NAV_PNL_TAB_TARGET"]
 
         # The rect is [L, T, R, B], top left x, y, and bottom right x, y in fraction of screen resolution
         # Nav Panel region covers the entire navigation panel.

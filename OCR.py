@@ -29,23 +29,36 @@ class OCR:
         """
         self.ap = ed_ap
         self.screen = screen
-        if self.ap.config['OCRMobile']:
-            self.paddleocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-                text_detection_model_name="PP-OCRv5_mobile_det",
-                text_recognition_model_name="en_PP-OCRv5_mobile_rec")  # text detection + text recognition
-        else:
-            self.paddleocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False)  # text detection + text recognition
+        self.paddleocr = self._build_paddleocr()
 
         # Class for text similarity metrics
         self.jarowinkler = JaroWinkler()
         self.sorensendice = SorensenDice()
         self.normalized_levenshtein = NormalizedLevenshtein()
+
+    def _build_paddleocr(self) -> PaddleOCR:
+        """ Construct the PaddleOCR engine (text detection + text recognition).
+        The recognition model follows config OCRLanguage so non-Latin game
+        locales (e.g. Russian) are actually readable. 'en' keeps the previous
+        behaviour exactly: default models, and the hardcoded English mobile
+        recognition model when OCRMobile is set. """
+        lang = self.ap.config.get('OCRLanguage') or 'en'
+        common = dict(
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False)
+        if lang != 'en':
+            try:
+                return PaddleOCR(lang=lang, **common)
+            except Exception as e:
+                logger.error(f"PaddleOCR init failed for OCRLanguage={lang!r} ({e}); "
+                             "falling back to default (English-oriented) models.")
+        if self.ap.config['OCRMobile']:
+            return PaddleOCR(
+                text_detection_model_name="PP-OCRv5_mobile_det",
+                text_recognition_model_name="en_PP-OCRv5_mobile_rec",
+                **common)
+        return PaddleOCR(**common)
 
     def _reinit_paddleocr(self):
         """ Reinitialize PaddleOCR after a failure. PaddleOCR's C++ layer can throw
@@ -54,19 +67,7 @@ class OCR:
         Creating a fresh instance prevents this. """
         try:
             logger.warning("Reinitializing PaddleOCR after failure.")
-            if self.ap.config['OCRMobile']:
-                self.paddleocr = PaddleOCR(
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False,
-                    text_detection_model_name="PP-OCRv5_mobile_det",
-                    text_recognition_model_name="en_PP-OCRv5_mobile_rec")  # text detection + text recognition
-            else:
-                self.paddleocr = PaddleOCR(
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False)  # text detection + text recognition
-
+            self.paddleocr = self._build_paddleocr()
         except Exception as e:
             logger.error(f"Failed to reinitialize PaddleOCR: {e}")
 

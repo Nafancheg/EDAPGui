@@ -117,20 +117,15 @@ class EDAutopilot:
         # Load AP.json config
         self.load_config()
 
-        # Load selected language
+        # Load selected language. The locales/*.json phrases mirror what the
+        # GAME renders on screen in that language, so Language doubles as the
+        # source of OCR reference phrases — keep OCRLanguage (the PaddleOCR
+        # recognition model) consistent with it or screen text won't match.
         self.locale = LocalizationManager('locales', self.config['Language'])
-
-        # Separate locale for text read FROM THE GAME SCREEN via OCR — keyed
-        # by OCRLanguage (the language the game renders in), not Language
-        # (the language EDAP speaks to the user). Comparing English OCR output
-        # against e.g. a Russian reference phrase scores ~0 similarity and
-        # silently breaks disengage detection and nav-panel tab matching.
-        try:
-            self.screen_locale = LocalizationManager('locales', self.config['OCRLanguage'])
-        except Exception:
-            logger.warning(f"No locale file for OCRLanguage={self.config['OCRLanguage']!r}; "
-                           "using 'en' for game screen text references.")
-            self.screen_locale = LocalizationManager('locales', 'en')
+        if self.config['Language'] != self.config['OCRLanguage']:
+            logger.warning(f"Language={self.config['Language']!r} but "
+                           f"OCRLanguage={self.config['OCRLanguage']!r}: the OCR model may not "
+                           "read the game's script, breaking disengage/nav-panel detection.")
 
         # config the voice interface
         self.vce = Voice()
@@ -941,7 +936,7 @@ class EDAutopilot:
         sim = 0.0
         ocr_textlist = self.ocr.image_simple_ocr(image, 'disengage')
         if ocr_textlist is not None:
-            sim = self.ocr.string_similarity(self.screen_locale["PRESS_TO_DISENGAGE_MSG"], str(ocr_textlist))
+            sim = self.ocr.string_similarity(self.locale["PRESS_TO_DISENGAGE_MSG"], str(ocr_textlist))
             logger.debug(f"Disengage similarity with {str(ocr_textlist)} is {sim}")
 
         if sim > sim_match:
