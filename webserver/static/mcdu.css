@@ -183,27 +183,33 @@ body{
 .s-hint{ color:var(--dim); font-size:14px; }
 .s-msg{ color:var(--dim); font-size:14px; white-space:normal; line-height:1.25; }
 
-/* scratchpad */
+/* scratchpad — fixed height so flashes/typing never reflow the instrument */
 .scratchpad{
   grid-row:11;
   background:#1e1e22;
-  padding:8px 16px 12px;
-  min-height:24px;
+  padding:0 16px;
+  height:46px;
   display:flex;
   align-items:center;
-  gap:2px;
-  color:var(--amber);
-  font-size:21px;
-  letter-spacing:2px;
-  text-shadow:0 0 7px var(--amber-glow);
   border-radius:0 0 8px 8px;
   overflow:hidden;
 }
-.sp-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cursor{ animation:blink 1s steps(1) infinite; }
-@keyframes blink{ 50%{ opacity:0; } }
-.scratchpad.flash .sp-text{ color:var(--alert); text-shadow:0 0 7px rgba(208,87,74,.5); }
-.scratchpad.flash .cursor{ display:none; }
+.sp-input{
+  flex:1 1 auto;
+  min-width:0;
+  background:transparent;
+  border:none;
+  outline:none;
+  padding:0;
+  font-family:var(--font-crt);
+  font-size:21px;
+  letter-spacing:2px;
+  color:var(--amber);
+  text-shadow:0 0 7px var(--amber-glow);
+  caret-color:var(--amber);
+  text-transform:uppercase;
+}
+.scratchpad.flash .sp-input{ color:var(--alert); text-shadow:0 0 7px rgba(208,87,74,.5); }
 
 /* ---- message log panel (below the keys, per mockup's MESSAGE LOG unit) ---- */
 .logpanel{ margin-top:16px; }

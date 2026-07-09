@@ -11,7 +11,7 @@
   var subL = $('subL');
   var subR = $('subR');
   var scratchEl = $('scratch');
-  var spText = $('spText');
+  var spInput = $('spInput');
   var logView = $('logView');
   var connDot = $('connDot');
   var connLabel = $('connLabel');
@@ -220,13 +220,32 @@
 
   function renderScratch() {
     if (S.flash) {
-      spText.textContent = S.flash;
+      spInput.value = S.flash;
+      spInput.readOnly = true;
       scratchEl.className = 'scratchpad scol flash';
     } else {
-      spText.textContent = S.scratch;
+      if (spInput.value !== S.scratch) spInput.value = S.scratch;
+      spInput.readOnly = false;
       scratchEl.className = 'scratchpad scol';
     }
   }
+
+  // direct typing / clipboard paste into the scratchpad input
+  spInput.addEventListener('input', function () {
+    if (S.flash) { renderScratch(); return; }
+    var v = spInput.value.toUpperCase().replace(/[^A-Z0-9 ./+-]/g, '').slice(0, 22);
+    if (spInput.value !== v) spInput.value = v;
+    S.scratch = v;
+  });
+  spInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      if (S.flash) clearFlashNow();
+      S.scratch = '';
+      renderScratch();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+    }
+  });
 
   // ---- LSK dispatch ----
   function doLSK(side, i) {

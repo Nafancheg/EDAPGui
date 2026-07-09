@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/mcdu.css?v=3">
+<link rel="stylesheet" href="/static/mcdu.css?v=4">
 </head>
 <body>
 <div class="stage">
@@ -58,8 +58,8 @@
 
       <div class="divider div-bot scol"></div>
 
-      <!-- scratchpad -->
-      <div id="scratch" class="scratchpad scol"><span id="spText" class="sp-text"></span><span class="cursor">&#9612;</span></div>
+      <!-- scratchpad: a real input (typing, clipboard paste, native caret) -->
+      <div id="scratch" class="scratchpad scol"><input id="spInput" class="sp-input" type="text" maxlength="22" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="scratchpad"></div>
 
       <!-- LSK left -->
       <button type="button" class="lsk lsk-l l1" data-side="L" data-idx="0" aria-label="LSK L1"><span class="lsk-cap"></span></button>
@@ -114,6 +114,6 @@
 
   </div>
 </div>
-<script src="/static/mcdu.js?v=3"></script>
+<script src="/static/mcdu.js?v=4"></script>
 </body>
 </html>
