@@ -326,7 +326,7 @@ class EDAutopilot:
             "VoiceEnable": False,
             "VoiceID": 1,  # my Windows only have 3 defined (0-2)
             "ElwScannerEnable": False,
-            "LogDEBUG": True,  # enable for debug messages
+            "LogDEBUG": False,  # enable for debug messages (per-frame key sends, compass reads — very noisy)
             "LogINFO": True,
             "Enable_CV_View": 0,  # Should CV View be enabled by default
             "ShipConfigFile": None,  # Ship config to load on start - deprecated

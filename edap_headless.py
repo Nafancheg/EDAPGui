@@ -8,6 +8,7 @@ GUI used to call.
 
 Usage:
     python edap_headless.py [--host 127.0.0.1] [--port 8090] [--duration N]
+                            [--log-level debug|info|warning]
 
 --duration N shuts the process down automatically after N seconds (for
 non-interactive / CI testing). Omit for a normal long-running server.
@@ -26,8 +27,21 @@ from webserver.server import Broadcaster, create_app, _status_snapshot_loop
 log = logging.getLogger("edap.headless")
 
 
-async def _run(host: str, port: int, duration: float | None):
+async def _run(host: str, port: int, duration: float | None,
+               log_level: str | None):
     loop = asyncio.get_running_loop()
+
+    # A web client dropping abruptly (tablet browser going to sleep, wifi
+    # blip) surfaces on the Windows proactor loop as an unhandled
+    # ConnectionResetError [WinError 10054] in _call_connection_lost.
+    # It's harmless — keep it out of the log, pass everything else through.
+    def _quiet_conn_reset(loop_, context):
+        if isinstance(context.get("exception"), ConnectionResetError):
+            log.debug("client connection reset: %s", context.get("exception"))
+            return
+        loop_.default_exception_handler(context)
+
+    loop.set_exception_handler(_quiet_conn_reset)
 
     # 1) Broadcaster must exist (bound to the loop) BEFORE the core, because
     #    constructing the core starts the engine thread which may call ap_ckb.
@@ -37,6 +51,13 @@ async def _run(host: str, port: int, duration: float | None):
     #    worker thread. Core construction is slow (OCR model load).
     print("Constructing EDAutopilot core (this can take a few seconds)...")
     ed_ap = EDAutopilot(cb=broadcaster, do_thread=True)
+
+    # --log-level beats the LogDEBUG/LogINFO flags from the user's AP.json:
+    # the core has just applied those in its constructor, so override after.
+    if log_level is not None:
+        from EDlogger import logger as ed_logger
+        ed_logger.setLevel(getattr(logging, log_level.upper()))
+        print(f"  (file log level forced to {log_level.upper()})")
 
     # 3) Build the aiohttp app (reuses the same broadcaster via ed_ap.ap_ckb).
     app, broadcaster = create_app(ed_ap, loop)
@@ -95,11 +116,16 @@ def main():
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--duration", type=float, default=None,
                         help="auto-shutdown after N seconds (for testing)")
+    parser.add_argument("--log-level", choices=("debug", "info", "warning"),
+                        default=None,
+                        help="force autopilot.log verbosity, overriding the "
+                             "LogDEBUG/LogINFO flags in the AP config")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    # NOTE: no logging.basicConfig here — EDlogger already configured the
+    # root logger (file handler on logs/autopilot.log) when ED_AP was imported.
     try:
-        asyncio.run(_run(args.host, args.port, args.duration))
+        asyncio.run(_run(args.host, args.port, args.duration, args.log_level))
     except KeyboardInterrupt:
         pass
 
