@@ -230,6 +230,15 @@
     }
   }
 
+  // Non-Latin keyboard layout (e.g. Cyrillic): map by PHYSICAL key position,
+  // so typing without switching layout still yields the MCDU Latin charset.
+  function physicalLatin(e) {
+    if (e.ctrlKey || e.altKey || e.metaKey) return null;
+    var m = /^Key([A-Z])$/.exec(e.code || '');
+    if (m && e.key && e.key.length === 1 && !/[a-zA-Z0-9]/.test(e.key)) return m[1];
+    return null;
+  }
+
   // direct typing / clipboard paste into the scratchpad input
   spInput.addEventListener('input', function () {
     if (S.flash) { renderScratch(); return; }
@@ -244,6 +253,12 @@
       renderScratch();
     } else if (e.key === 'Enter') {
       e.preventDefault();
+    } else {
+      var L = physicalLatin(e);
+      if (L !== null) {
+        e.preventDefault();
+        if (!S.flash && S.scratch.length < 22) { S.scratch += L; renderScratch(); }
+      }
     }
   });
 
@@ -577,6 +592,7 @@
     if (k === 'Backspace') { e.preventDefault(); clr(); }
     else if (k === 'Escape') { if (S.flash) clearFlashNow(); S.scratch = ''; renderScratch(); }
     else if (k === ' ') { e.preventDefault(); appendChar(' '); }
+    else if (physicalLatin(e) !== null) { appendChar(physicalLatin(e)); }
     else if (k && k.length === 1 && /[a-zA-Z0-9./-]/.test(k)) { appendChar(k.toUpperCase()); }
   });
 

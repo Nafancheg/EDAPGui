@@ -73,10 +73,12 @@ body{
 .conn-label{ color:#8f8f86; font-size:11px; letter-spacing:2px; }
 
 /* ---- core grid: LSK | screen | LSK ---- */
+/* fixed row heights: the screen keeps the exact same geometry on every page,
+   so page flips never reflow anything around the instrument */
 .core{
   display:grid;
   grid-template-columns:48px 1fr 48px;
-  grid-template-rows:auto auto auto repeat(6, minmax(46px,1fr)) auto auto;
+  grid-template-rows:34px 24px auto repeat(6, 52px) auto auto;
   position:relative;
 }
 
@@ -112,6 +114,7 @@ body{
   align-items:baseline;
   justify-content:space-between;
   padding:10px 16px 2px;
+  overflow:hidden;
 }
 .title-text{ color:var(--title); font-size:20px; letter-spacing:2px; }
 .title-ind{ color:#c9c9c1; font-size:18px; letter-spacing:1px; }
@@ -126,6 +129,7 @@ body{
   color:var(--dim);
   letter-spacing:.5px;
   gap:8px;
+  overflow:hidden;
 }
 .sub-left{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sub-right{ flex:0 0 auto; }
