@@ -498,7 +498,8 @@
   }
 
   // ---- top-level render ----
-  var PAGE_FOR_KEY = { 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL' };
+  // DIR doubles as "back to the main screen" until it gets a real Direct-To page
+  var PAGE_FOR_KEY = { 'DIR': 'INIT', 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL' };
 
   function renderSub() {
     var snap = S.snap;
@@ -522,8 +523,9 @@
 
     // highlight active function key
     fkEls.forEach(function (b) {
-      var p = PAGE_FOR_KEY[b.getAttribute('data-key')];
-      b.classList.toggle('fk-active', p === S.page);
+      var key = b.getAttribute('data-key');
+      // DIR is a shortcut, not a page of its own -- never shown as active
+      b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === S.page && key !== 'DIR');
     });
 
     renderScratch();
