@@ -120,6 +120,18 @@ class EDAutopilot:
         # Load selected language
         self.locale = LocalizationManager('locales', self.config['Language'])
 
+        # Separate locale for text read FROM THE GAME SCREEN via OCR — keyed
+        # by OCRLanguage (the language the game renders in), not Language
+        # (the language EDAP speaks to the user). Comparing English OCR output
+        # against e.g. a Russian reference phrase scores ~0 similarity and
+        # silently breaks disengage detection and nav-panel tab matching.
+        try:
+            self.screen_locale = LocalizationManager('locales', self.config['OCRLanguage'])
+        except Exception:
+            logger.warning(f"No locale file for OCRLanguage={self.config['OCRLanguage']!r}; "
+                           "using 'en' for game screen text references.")
+            self.screen_locale = LocalizationManager('locales', 'en')
+
         # config the voice interface
         self.vce = Voice()
         self.vce.v_enabled = self.config['VoiceEnable']
@@ -929,8 +941,8 @@ class EDAutopilot:
         sim = 0.0
         ocr_textlist = self.ocr.image_simple_ocr(image, 'disengage')
         if ocr_textlist is not None:
-            sim = self.ocr.string_similarity(self.locale["PRESS_TO_DISENGAGE_MSG"], str(ocr_textlist))
-            logger.info(f"Disengage similarity with {str(ocr_textlist)} is {sim}")
+            sim = self.ocr.string_similarity(self.screen_locale["PRESS_TO_DISENGAGE_MSG"], str(ocr_textlist))
+            logger.debug(f"Disengage similarity with {str(ocr_textlist)} is {sim}")
 
         if sim > sim_match:
             self.ap_ckb('log+vce', 'Disengage Supercruise')
