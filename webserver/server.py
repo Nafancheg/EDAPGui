@@ -22,6 +22,34 @@ log = logging.getLogger("edap.webserver")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+SCOOPABLE_CLASSES = {"K", "G", "B", "F", "O", "A", "M"}
+
+
+def map_nav_route(data):
+    """Map raw NavRoute.json data to the web 'route' event payload.
+    Returns {"active": bool, "destination": str|None, "systems": [
+        {"system": str, "star_class": str, "scoopable": bool, "dist_ly": float|None}, ...]}
+    The first entry is the starting system (dist_ly None)."""
+    if not data or data.get("event") == "NavRouteClear" or not data.get("Route"):
+        return {"active": False, "destination": None, "systems": []}
+    systems = []
+    prev_pos = None
+    for hop in data["Route"]:
+        pos = hop.get("StarPos")
+        dist = None
+        if prev_pos is not None and pos is not None:
+            dist = round(sum((a - b) ** 2 for a, b in zip(pos, prev_pos)) ** 0.5, 2)
+        star_class = hop.get("StarClass") or ""
+        systems.append({
+            "system": hop.get("StarSystem", ""),
+            "star_class": star_class,
+            "scoopable": star_class in SCOOPABLE_CLASSES,
+            "dist_ly": dist,
+        })
+        if pos is not None:
+            prev_pos = pos
+    return {"active": True, "destination": systems[-1]["system"], "systems": systems}
+
 
 def map_ap_ckb(msg, body=None):
     """Translate an ap_ckb (tag, body) into a JSON-friendly event dict, or
@@ -132,7 +160,7 @@ async def _status_snapshot_loop(ed_ap, broadcaster: Broadcaster, interval: float
         await asyncio.sleep(interval)
 
 
-async def _dispatch_command(ed_ap, ws: web.WebSocketResponse, cmd: dict):
+async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: dict):
     """Handle a single UI -> core command. Runs on the asyncio thread, which
     is safe: set_*_assist is thread-safe and the throttle setters are quick."""
     name = cmd.get("cmd")
@@ -167,6 +195,18 @@ async def _dispatch_command(ed_ap, ws: web.WebSocketResponse, cmd: dict):
             await ws.send_str(json.dumps({"type": "error", "text": f"invalid throttle level: {level!r}"}))
     elif name == "config.get":
         await ws.send_str(json.dumps({"type": "config", "data": dict(ed_ap.config)}))
+    elif name == "config.set":
+        key = cmd.get("key")
+        if not isinstance(key, str) or key not in ed_ap.config:
+            await ws.send_str(json.dumps({"type": "error", "text": f"unknown config key: {key!r}"}))
+        else:
+            ed_ap.config[key] = cmd.get("value")
+            ed_ap.process_config_settings()
+            # keep every connected client's view of the config in sync
+            await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
+    elif name == "route.get":
+        data = ed_ap.nav_route.get_nav_route_data()
+        await ws.send_str(json.dumps({"type": "route", "data": map_nav_route(data)}))
     else:
         await ws.send_str(json.dumps({"type": "error", "text": f"unknown command: {name!r}"}))
 
@@ -211,7 +251,7 @@ def create_app(ed_ap, loop: asyncio.AbstractEventLoop):
                         await ws.send_str(json.dumps({"type": "error", "text": "invalid JSON"}))
                         continue
                     try:
-                        await _dispatch_command(ed_ap, ws, cmd)
+                        await _dispatch_command(ed_ap, broadcaster, ws, cmd)
                     except Exception as e:
                         log.exception("error dispatching command")
                         await ws.send_str(json.dumps({"type": "error", "text": str(e)}))

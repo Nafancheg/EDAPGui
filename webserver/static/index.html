@@ -3,148 +3,161 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ED Autopilot - Headless</title>
-<style>
-  :root { --amber:#ffb000; --amber-dim:#a06e00; --green:#00c800; --bg:#000; }
-  * { box-sizing: border-box; }
-  body {
-    margin:0; background:var(--bg); color:var(--amber);
-    font-family: "Consolas","Courier New",monospace; font-size:14px;
-    padding:10px;
-  }
-  h1 { font-size:16px; margin:0 0 8px; letter-spacing:2px; }
-  #conn { font-size:12px; color:var(--amber-dim); }
-  #conn.up { color:var(--green); }
-  #apstatus { border:1px solid var(--amber-dim); padding:6px 8px; margin:8px 0; }
-  .cols { display:flex; gap:12px; flex-wrap:wrap; }
-  .panel { border:1px solid var(--amber-dim); padding:8px; flex:1; min-width:280px; }
-  .panel h2 { font-size:13px; margin:0 0 6px; color:var(--amber-dim); letter-spacing:1px; }
-  #status table { width:100%; border-collapse:collapse; }
-  #status td { padding:1px 4px; vertical-align:top; }
-  #status td.k { color:var(--amber-dim); white-space:nowrap; }
-  #log { height:260px; overflow-y:auto; white-space:pre-wrap; word-break:break-word; }
-  #log .voice { color:var(--green); }
-  #controls { margin:10px 0; }
-  #controls .row { margin-bottom:6px; }
-  button {
-    background:#111; color:var(--amber); border:1px solid var(--amber);
-    font-family:inherit; font-size:13px; padding:8px 12px; margin:2px;
-    cursor:pointer; min-width:64px; min-height:40px;
-  }
-  button:hover { background:var(--amber); color:#000; }
-  .lbl { color:var(--amber-dim); margin-right:6px; }
-</style>
+<title>ED Autopilot — MCDU</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/mcdu.css">
 </head>
 <body>
-  <h1>ED AUTOPILOT &mdash; MCDU (placeholder)</h1>
-  <div id="conn">connecting&hellip;</div>
-  <div id="apstatus">AP: &mdash;</div>
+<div class="stage">
+  <div class="instrument">
 
-  <div id="controls">
-    <div class="row"><span class="lbl">FSD</span>
-      <button data-cmd='{"cmd":"assist.start","mode":"fsd"}'>START</button>
-      <button data-cmd='{"cmd":"assist.stop","mode":"fsd"}'>STOP</button>
+    <!-- shield / nameplate -->
+    <div class="nameplate">
+      <svg class="logo" viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
+        <path d="M20 2 L38 20 L20 38 L2 20 Z" fill="none" stroke="#E8973E" stroke-width="2"/>
+        <path d="M20 12 L28 20 L20 28 L12 20 Z" fill="#E8973E"/>
+      </svg>
+      <div class="brand">EDAP&nbsp;·&nbsp;MCDU</div>
+      <div class="conn">
+        <span id="connDot" class="dot off"></span>
+        <span id="connLabel" class="conn-label">OFFLINE</span>
+      </div>
     </div>
-    <div class="row"><span class="lbl">SC&nbsp;</span>
-      <button data-cmd='{"cmd":"assist.start","mode":"sc"}'>START</button>
-      <button data-cmd='{"cmd":"assist.stop","mode":"sc"}'>STOP</button>
+
+    <!-- core: LSK columns + screen -->
+    <div id="core" class="core page-init">
+
+      <div class="screen-bg">
+        <div class="layer-dots"></div>
+        <div class="layer-glint"></div>
+      </div>
+
+      <!-- screen title row -->
+      <div class="scr-title scol">
+        <span id="scrTitle" class="title-text">EDAUTOPILOT</span>
+        <span id="scrInd" class="title-ind">INIT</span>
+      </div>
+
+      <!-- screen subtitle (AP / MODE) -->
+      <div class="scr-sub scol">
+        <span id="subL" class="sub-left">AP: ---</span>
+        <span id="subR" class="sub-right">MODE ---</span>
+      </div>
+
+      <div class="divider div-top scol"></div>
+
+      <!-- 6 data rows -->
+      <div class="row scol r1"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+      <div class="row scol r2"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+      <div class="row scol r3"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+      <div class="row scol r4"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+      <div class="row scol r5"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+      <div class="row scol r6"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
+
+      <!-- log view (overlays rows region on DATA page) -->
+      <div id="logView" class="log-view"></div>
+
+      <div class="divider div-bot scol"></div>
+
+      <!-- scratchpad -->
+      <div id="scratch" class="scratchpad scol"><span id="spText" class="sp-text"></span><span class="cursor">&#9612;</span></div>
+
+      <!-- LSK left -->
+      <button type="button" class="lsk lsk-l l1" data-side="L" data-idx="0" aria-label="LSK L1"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-l l2" data-side="L" data-idx="1" aria-label="LSK L2"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-l l3" data-side="L" data-idx="2" aria-label="LSK L3"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-l l4" data-side="L" data-idx="3" aria-label="LSK L4"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-l l5" data-side="L" data-idx="4" aria-label="LSK L5"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-l l6" data-side="L" data-idx="5" aria-label="LSK L6"><span class="lsk-cap"></span></button>
+
+      <!-- LSK right -->
+      <button type="button" class="lsk lsk-r r1b" data-side="R" data-idx="0" aria-label="LSK R1"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-r r2b" data-side="R" data-idx="1" aria-label="LSK R2"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-r r3b" data-side="R" data-idx="2" aria-label="LSK R3"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-r r4b" data-side="R" data-idx="3" aria-label="LSK R4"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-r r5b" data-side="R" data-idx="4" aria-label="LSK R5"><span class="lsk-cap"></span></button>
+      <button type="button" class="lsk lsk-r r6b" data-side="R" data-idx="5" aria-label="LSK R6"><span class="lsk-cap"></span></button>
     </div>
-    <div class="row"><span class="lbl">THR</span>
-      <button data-cmd='{"cmd":"throttle.set","level":0}'>0%</button>
-      <button data-cmd='{"cmd":"throttle.set","level":50}'>50%</button>
-      <button data-cmd='{"cmd":"throttle.set","level":100}'>100%</button>
+
+    <!-- function keys -->
+    <div class="funckeys">
+      <button type="button" class="fk" data-key="DIR">DIR</button>
+      <button type="button" class="fk" data-key="PROG">PROG</button>
+      <button type="button" class="fk" data-key="PERF">PERF</button>
+      <button type="button" class="fk" data-key="INIT">INIT</button>
+      <button type="button" class="fk" data-key="DATA">DATA</button>
+      <button type="button" class="fk" data-key="F-PLN">F-PLN</button>
+      <button type="button" class="fk" data-key="RAD NAV">RAD NAV</button>
+      <button type="button" class="fk" data-key="FUEL PRED">FUEL PRED</button>
+      <button type="button" class="fk" data-key="SEC F-PLN">SEC F-PLN</button>
+      <button type="button" class="fk" data-key="ATC COMM">ATC COMM</button>
+      <button type="button" class="fk" data-key="MCDU MENU">MCDU MENU</button>
+      <button type="button" class="fk" data-key="AUTO TUNE">AUTO TUNE</button>
     </div>
-    <div class="row"><span class="lbl">ALL</span>
-      <button data-cmd='{"cmd":"assist.stop_all"}'>STOP ALL</button>
+
+    <!-- slew row -->
+    <div class="slewrow">
+      <button type="button" class="fk airport" data-slew="airport">AIRPORT</button>
+      <button type="button" class="slew" data-slew="l" aria-label="slew left">&#8592;</button>
+      <button type="button" class="slew" data-slew="u" aria-label="slew up">&#8593;</button>
+      <button type="button" class="slew" data-slew="d" aria-label="slew down">&#8595;</button>
+      <button type="button" class="slew" data-slew="r" aria-label="slew right">&#8594;</button>
     </div>
+
+    <!-- numeric keypad -->
+    <div class="numpad">
+      <button type="button" class="key num" data-ch="1">1</button>
+      <button type="button" class="key num" data-ch="2">2</button>
+      <button type="button" class="key num" data-ch="3">3</button>
+      <button type="button" class="key num" data-ch="4">4</button>
+      <button type="button" class="key num" data-ch="5">5</button>
+      <button type="button" class="key num" data-ch="6">6</button>
+      <button type="button" class="key num" data-ch="7">7</button>
+      <button type="button" class="key num" data-ch="8">8</button>
+      <button type="button" class="key num" data-ch="9">9</button>
+      <button type="button" class="key num" data-ch=".">.</button>
+      <button type="button" class="key num" data-ch="0">0</button>
+      <button type="button" class="key num" data-act="sign">+/&#8722;</button>
+    </div>
+
+    <!-- alpha keypad -->
+    <div class="alphapad">
+      <button type="button" class="key alpha" data-ch="A">A</button>
+      <button type="button" class="key alpha" data-ch="B">B</button>
+      <button type="button" class="key alpha" data-ch="C">C</button>
+      <button type="button" class="key alpha" data-ch="D">D</button>
+      <button type="button" class="key alpha" data-ch="E">E</button>
+      <button type="button" class="key alpha" data-ch="F">F</button>
+      <button type="button" class="key alpha" data-ch="G">G</button>
+      <button type="button" class="key alpha" data-ch="H">H</button>
+      <button type="button" class="key alpha" data-ch="I">I</button>
+      <button type="button" class="key alpha" data-ch="J">J</button>
+      <button type="button" class="key alpha" data-ch="K">K</button>
+      <button type="button" class="key alpha" data-ch="L">L</button>
+      <button type="button" class="key alpha" data-ch="M">M</button>
+      <button type="button" class="key alpha" data-ch="N">N</button>
+      <button type="button" class="key alpha" data-ch="O">O</button>
+      <button type="button" class="key alpha" data-ch="P">P</button>
+      <button type="button" class="key alpha" data-ch="Q">Q</button>
+      <button type="button" class="key alpha" data-ch="R">R</button>
+      <button type="button" class="key alpha" data-ch="S">S</button>
+      <button type="button" class="key alpha" data-ch="T">T</button>
+      <button type="button" class="key alpha" data-ch="U">U</button>
+      <button type="button" class="key alpha" data-ch="V">V</button>
+      <button type="button" class="key alpha" data-ch="W">W</button>
+      <button type="button" class="key alpha" data-ch="X">X</button>
+      <button type="button" class="key alpha" data-ch="Y">Y</button>
+      <button type="button" class="key alpha" data-ch="Z">Z</button>
+      <button type="button" class="key alpha" data-ch="/">/</button>
+      <button type="button" class="key alpha spec" data-ch=" ">SP</button>
+      <button type="button" class="key alpha spec" data-act="ovfy">OVFY</button>
+      <button type="button" class="key alpha spec" data-act="clr">CLR</button>
+    </div>
+
   </div>
-
-  <div class="cols">
-    <div class="panel" id="statuspanel">
-      <h2>STATUS</h2>
-      <div id="status">waiting for telemetry&hellip;</div>
-    </div>
-    <div class="panel">
-      <h2>LOG</h2>
-      <div id="log"></div>
-    </div>
-  </div>
-
-<script>
-(function(){
-  var connEl = document.getElementById('conn');
-  var apEl = document.getElementById('apstatus');
-  var statusEl = document.getElementById('status');
-  var logEl = document.getElementById('log');
-
-  function addLog(text, voice){
-    var line = document.createElement('div');
-    if (voice) line.className = 'voice';
-    line.textContent = text;
-    logEl.appendChild(line);
-    while (logEl.childNodes.length > 400) logEl.removeChild(logEl.firstChild);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  var FIELDS = [
-    ['ap_mode','AP MODE'], ['ap_state','AP STATE'],
-    ['ship_status','SHIP'], ['fuel_percent','FUEL %'],
-    ['location','SYSTEM'], ['star_class','STAR'], ['scoopable','SCOOPABLE'],
-    ['target','TARGET'], ['jumps_remaining','JUMPS LEFT'],
-    ['jump_cnt','JUMP CNT'], ['total_jumps','TOTAL JUMPS'],
-    ['total_dist_jumped','DIST LY'], ['eta','ETA'],
-    ['elw_scanner','ELW'], ['edsm_info','EDSM']
-  ];
-  function renderStatus(d){
-    var rows = '';
-    FIELDS.forEach(function(f){
-      var v = d[f[0]];
-      if (v === null || v === undefined) v = '-';
-      rows += '<tr><td class="k">'+f[1]+'</td><td>'+String(v)+'</td></tr>';
-    });
-    statusEl.innerHTML = '<table>'+rows+'</table>';
-  }
-
-  function handle(ev){
-    switch(ev.type){
-      case 'hello': addLog('[connected to server]'); break;
-      case 'log': addLog(ev.text, ev.voice); break;
-      case 'statusline': apEl.textContent = 'AP: ' + ev.text; break;
-      case 'jumpcount': addLog('[jumps] ' + ev.text); break;
-      case 'assist':
-        addLog('[assist] ' + ev.mode + ' ' + (ev.running?'RUNNING':'stopped'));
-        break;
-      case 'ship_changed': addLog('[ship changed]'); break;
-      case 'status_snapshot': renderStatus(ev.data); break;
-      case 'error': addLog('[error] ' + ev.text); break;
-      case 'config': addLog('[config] ' + JSON.stringify(ev.data).slice(0,200)+'...'); break;
-      default: addLog('[event] ' + JSON.stringify(ev));
-    }
-  }
-
-  var ws;
-  function connect(){
-    var proto = (location.protocol === 'https:') ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '/ws');
-    ws.onopen = function(){ connEl.textContent = 'connected'; connEl.className = 'up'; };
-    ws.onclose = function(){
-      connEl.textContent = 'disconnected - retrying'; connEl.className = '';
-      setTimeout(connect, 2000);
-    };
-    ws.onerror = function(){ connEl.textContent = 'error'; };
-    ws.onmessage = function(m){
-      try { handle(JSON.parse(m.data)); } catch(e){ addLog('[bad msg] '+m.data); }
-    };
-  }
-  connect();
-
-  document.querySelectorAll('button[data-cmd]').forEach(function(b){
-    b.addEventListener('click', function(){
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(b.getAttribute('data-cmd'));
-      else addLog('[not connected]');
-    });
-  });
-})();
-</script>
+</div>
+<script src="/static/mcdu.js"></script>
 </body>
 </html>
