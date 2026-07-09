@@ -223,7 +223,17 @@ def create_app(ed_ap, loop: asyncio.AbstractEventLoop):
     broadcaster = ed_ap.ap_ckb if isinstance(ed_ap.ap_ckb, Broadcaster) else Broadcaster(loop)
     broadcaster.start()
 
-    app = web.Application()
+    @web.middleware
+    async def no_cache_mw(request, handler):
+        # The UI is served to a handful of LAN clients and changes with every
+        # iteration; stale cached css/js breaks the page silently. Force
+        # revalidation on every load (WS route untouched).
+        resp = await handler(request)
+        if request.path == "/" or request.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+    app = web.Application(middlewares=[no_cache_mw])
     app["ed_ap"] = ed_ap
     app["broadcaster"] = broadcaster
 

@@ -259,20 +259,21 @@ body{
 .l1,.r1b{ grid-row:4; } .l2,.r2b{ grid-row:5; } .l3,.r3b{ grid-row:6; }
 .l4,.r4b{ grid-row:7; } .l5,.r5b{ grid-row:8; } .l6,.r6b{ grid-row:9; }
 .lsk-cap{
-  width:26px;
-  height:15px;
-  border-radius:3px;
+  width:38px;
+  height:24px;
+  border-radius:4px;
   background:linear-gradient(#3a3a41,#222226);
   border:1px solid #45454d;
-  box-shadow:inset 0 0 0 2px transparent;
+  border-top-color:#54545c;
+  box-shadow:0 2px 3px rgba(0,0,0,.5);
   position:relative;
 }
 .lsk-cap::after{
   content:"";
   position:absolute;
-  left:4px; right:4px;
+  left:7px; right:7px;
   top:50%; transform:translateY(-50%);
-  height:3px;
+  height:4px;
   border-radius:2px;
   background:#c19a5a;
 }
@@ -300,10 +301,10 @@ body{
 .fk:hover{ border-color:var(--amber); color:var(--amber); }
 .fk-active{ border-color:var(--amber); color:var(--amber); }
 
-/* ---- slew row ---- */
+/* ---- slew row (left-aligned, like the AIRPORT/arrow block on the real unit) ---- */
 .slewrow{
   display:flex;
-  justify-content:center;
+  justify-content:flex-start;
   gap:7px;
   margin-top:12px;
 }
