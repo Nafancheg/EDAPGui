@@ -178,7 +178,7 @@
     logView.appendChild(line);
     while (logView.childElementCount > 400) logView.removeChild(logView.firstChild);
 
-    if (S.page === 'LOG' && S.logStick) logView.scrollTop = logView.scrollHeight;
+    if (S.logStick) logView.scrollTop = logView.scrollHeight;
   }
 
   logView.addEventListener('scroll', function () {
@@ -209,13 +209,6 @@
     if (S.flash) clearFlashNow();
     if (S.scratch.length >= 22) return;
     S.scratch += ch;
-    renderScratch();
-  }
-
-  function toggleSign() {
-    if (S.flash) clearFlashNow();
-    if (S.scratch.charAt(0) === '-') S.scratch = S.scratch.slice(1);
-    else S.scratch = '-' + S.scratch;
     renderScratch();
   }
 
@@ -448,13 +441,6 @@
     }
   }
 
-  function renderLOG() {
-    scrTitle.textContent = 'DATA LOG';
-    scrInd.textContent = 'LOG';
-    clearActions();
-    for (var i = 0; i < 6; i++) clearRow(i);
-  }
-
   function renderFUEL() {
     scrTitle.textContent = 'FUEL PRED';
     scrInd.textContent = 'FUEL';
@@ -478,7 +464,7 @@
   }
 
   // ---- top-level render ----
-  var PAGE_FOR_KEY = { 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'DATA': 'LOG' };
+  var PAGE_FOR_KEY = { 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL' };
 
   function renderSub() {
     var snap = S.snap;
@@ -497,7 +483,6 @@
     renderSub();
 
     if (S.page === 'ROUTE') renderROUTE();
-    else if (S.page === 'LOG') renderLOG();
     else if (S.page === 'FUEL') renderFUEL();
     else renderINIT();
 
@@ -525,7 +510,6 @@
     S.page = p;
     if (p === 'ROUTE') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
     render();
-    if (p === 'LOG') { S.logStick = true; logView.scrollTop = logView.scrollHeight; }
   }
 
   function fkPress(key) {
@@ -538,9 +522,6 @@
     if (S.page === 'ROUTE') {
       if (dir === 'l' || dir === 'u') { S.routePage = Math.max(0, S.routePage - 1); render(); }
       else if (dir === 'r' || dir === 'd') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }
-    } else if (S.page === 'LOG') {
-      if (dir === 'u') logView.scrollTop -= 60;
-      else if (dir === 'd') logView.scrollTop += 60;
     }
   }
 
@@ -569,18 +550,7 @@
     });
   });
 
-  document.querySelectorAll('.key').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var ch = b.getAttribute('data-ch');
-      var act = b.getAttribute('data-act');
-      if (ch !== null) appendChar(ch);
-      else if (act === 'sign') toggleSign();
-      else if (act === 'ovfy') flash('PAGE INOP', 1500);
-      else if (act === 'clr') clr();
-    });
-  });
-
-  // physical keyboard (desktop debugging)
+  // physical keyboard (scratchpad input; on-screen keypads removed by design)
   window.addEventListener('keydown', function (e) {
     var tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -588,7 +558,7 @@
     if (k === 'Backspace') { e.preventDefault(); clr(); }
     else if (k === 'Escape') { if (S.flash) clearFlashNow(); S.scratch = ''; renderScratch(); }
     else if (k === ' ') { e.preventDefault(); appendChar(' '); }
-    else if (k && k.length === 1 && /[a-zA-Z0-9./]/.test(k)) { appendChar(k.toUpperCase()); }
+    else if (k && k.length === 1 && /[a-zA-Z0-9./-]/.test(k)) { appendChar(k.toUpperCase()); }
   });
 
   // ---- boot ----

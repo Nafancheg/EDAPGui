@@ -56,9 +56,6 @@
       <div class="row scol r5"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
       <div class="row scol r6"><div class="row-heads"><span class="lhead"></span><span class="rhead"></span></div><div class="row-vals"><span class="lval"></span><span class="rval"></span></div></div>
 
-      <!-- log view (overlays rows region on DATA page) -->
-      <div id="logView" class="log-view"></div>
-
       <div class="divider div-bot scol"></div>
 
       <!-- scratchpad -->
@@ -106,57 +103,13 @@
       <button type="button" class="slew" data-slew="r" aria-label="slew right">&#8594;</button>
     </div>
 
-    <!-- keyboard: numeric + alpha side by side -->
-    <div class="keyboard">
-    <!-- numeric keypad -->
-    <div class="numpad">
-      <button type="button" class="key num" data-ch="1">1</button>
-      <button type="button" class="key num" data-ch="2">2</button>
-      <button type="button" class="key num" data-ch="3">3</button>
-      <button type="button" class="key num" data-ch="4">4</button>
-      <button type="button" class="key num" data-ch="5">5</button>
-      <button type="button" class="key num" data-ch="6">6</button>
-      <button type="button" class="key num" data-ch="7">7</button>
-      <button type="button" class="key num" data-ch="8">8</button>
-      <button type="button" class="key num" data-ch="9">9</button>
-      <button type="button" class="key num" data-ch=".">.</button>
-      <button type="button" class="key num" data-ch="0">0</button>
-      <button type="button" class="key num" data-act="sign">+/&#8722;</button>
-    </div>
-
-    <!-- alpha keypad -->
-    <div class="alphapad">
-      <button type="button" class="key alpha" data-ch="A">A</button>
-      <button type="button" class="key alpha" data-ch="B">B</button>
-      <button type="button" class="key alpha" data-ch="C">C</button>
-      <button type="button" class="key alpha" data-ch="D">D</button>
-      <button type="button" class="key alpha" data-ch="E">E</button>
-      <button type="button" class="key alpha" data-ch="F">F</button>
-      <button type="button" class="key alpha" data-ch="G">G</button>
-      <button type="button" class="key alpha" data-ch="H">H</button>
-      <button type="button" class="key alpha" data-ch="I">I</button>
-      <button type="button" class="key alpha" data-ch="J">J</button>
-      <button type="button" class="key alpha" data-ch="K">K</button>
-      <button type="button" class="key alpha" data-ch="L">L</button>
-      <button type="button" class="key alpha" data-ch="M">M</button>
-      <button type="button" class="key alpha" data-ch="N">N</button>
-      <button type="button" class="key alpha" data-ch="O">O</button>
-      <button type="button" class="key alpha" data-ch="P">P</button>
-      <button type="button" class="key alpha" data-ch="Q">Q</button>
-      <button type="button" class="key alpha" data-ch="R">R</button>
-      <button type="button" class="key alpha" data-ch="S">S</button>
-      <button type="button" class="key alpha" data-ch="T">T</button>
-      <button type="button" class="key alpha" data-ch="U">U</button>
-      <button type="button" class="key alpha" data-ch="V">V</button>
-      <button type="button" class="key alpha" data-ch="W">W</button>
-      <button type="button" class="key alpha" data-ch="X">X</button>
-      <button type="button" class="key alpha" data-ch="Y">Y</button>
-      <button type="button" class="key alpha" data-ch="Z">Z</button>
-      <button type="button" class="key alpha" data-ch="/">/</button>
-      <button type="button" class="key alpha spec" data-ch=" ">SP</button>
-      <button type="button" class="key alpha spec" data-act="ovfy">OVFY</button>
-      <button type="button" class="key alpha spec" data-act="clr">CLR</button>
-    </div>
+    <!-- message log (per mockup's MESSAGE LOG unit) -->
+    <div class="logpanel">
+      <div class="logpanel-head">MESSAGE LOG</div>
+      <div class="logpanel-screen">
+        <div class="layer-dots"></div>
+        <div id="logView" class="log-view"></div>
+      </div>
     </div>
 
   </div>
