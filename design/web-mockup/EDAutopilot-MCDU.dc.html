@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,monospace;background:#08080a;color:#c9c9c1;-webkit-font-smoothing:antialiased}
+    button{font-family:'IBM Plex Mono',ui-monospace,monospace}
+    a{color:#E8973E;text-decoration:none}
+    a:hover{color:#f2b26a}
+    ::-webkit-scrollbar{width:8px;height:8px}
+    ::-webkit-scrollbar-track{background:#0d0d0f}
+    ::-webkit-scrollbar-thumb{background:#2e2e33;border-radius:4px}
+  </style>
+</helmet>
+
+<div style="min-height:100vh;background:radial-gradient(circle at 50% 0%,#141418,#08080a 70%);padding:28px 20px;display:flex;gap:24px;justify-content:center;align-items:flex-start;flex-wrap:wrap">
+
+  <!-- ============ MCDU UNIT ============ -->
+  <div style="width:560px;max-width:100%;background:linear-gradient(#2b2b30,#161619);border:1px solid #3a3a41;border-radius:26px;padding:20px 18px 26px;box-shadow:0 30px 70px rgba(0,0,0,0.7),inset 0 2px 2px rgba(255,255,255,0.06),inset 0 -3px 8px rgba(0,0,0,0.6)">
+
+    <!-- brand plate -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 6px 14px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <svg width="22" height="22" viewBox="0 0 30 30"><path d="M15 2 L28 15 L15 28 L2 15 Z" fill="none" stroke="#E8973E" stroke-width="2.5"></path><path d="M15 9 L21 15 L15 21 L9 15 Z" fill="#E8973E"></path></svg>
+        <span style="color:#cfcfc7;font-size:13px;letter-spacing:3px;font-weight:600">EDAP · MCDU</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px">
+        <span style="{{ statusDotStyle }}"></span>
+        <span style="color:#8f8f86;font-size:11px;letter-spacing:1.5px">{{ statusText }}</span>
+      </div>
+    </div>
+
+    <!-- ===== SCREEN + LSK ===== -->
+    <div style="display:flex;gap:9px;align-items:stretch">
+
+      <!-- left LSK -->
+      <div style="display:flex;flex-direction:column;gap:0;width:26px;padding:34px 0">
+        <sc-for list="{{ leftFields }}" as="f" hint-placeholder-count="6">
+          <div style="flex:1;display:flex;align-items:center;justify-content:center">
+            <button onClick="{{ f.onClick }}" style="background:linear-gradient(#3a3a41,#222226);border:1px solid #45454d;border-top-color:#54545c;border-radius:3px;width:24px;height:15px;cursor:pointer;padding:0;box-shadow:0 1px 2px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E"><span style="display:block;width:60%;height:3px;background:#c19a5a;border-radius:1px;margin:0 auto"></span></button>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- screen glass -->
+      <div style="flex:1;background:linear-gradient(#0c0c0e,#090909);border:1px solid #000;border-radius:10px;padding:12px 14px;position:relative;box-shadow:inset 0 0 46px rgba(0,0,0,0.85),0 0 0 3px #101012;font-family:'VT323',monospace;overflow:hidden">
+        <div style="position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(rgba(4,5,7,0.55) 1px,transparent 1.5px);background-size:3px 3px;opacity:0.6"></div>
+        <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(rgba(255,255,255,0.03),rgba(255,255,255,0) 40%);border-radius:10px"></div>
+
+        <!-- title line -->
+        <div style="display:flex;align-items:baseline;justify-content:space-between;position:relative">
+          <span style="color:#5f96d6;font-size:19px;letter-spacing:2px">EDAUTOPILOT</span>
+          <span style="color:#c9c9c1;font-size:19px;letter-spacing:2px">1/2 &rarr;</span>
+        </div>
+        <div style="height:1px;background:#1e1e22;margin:5px 0 3px;position:relative"></div>
+
+        <!-- 6 data rows -->
+        <div style="display:flex;flex-direction:column;position:relative;min-height:246px">
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px 0">
+              <div style="display:flex;justify-content:space-between;font-size:13px;letter-spacing:1px;line-height:1">
+                <span style="color:#7a7a72">{{ r.lhead }}</span>
+                <span style="color:#7a7a72;text-align:right">{{ r.rhead }}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:20px;letter-spacing:0.5px;line-height:1">
+                <span onClick="{{ r.lClick }}" style="{{ r.lStyle }}">{{ r.lval }}</span>
+                <span onClick="{{ r.rClick }}" style="{{ r.rStyle }}">{{ r.rval }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- scratchpad -->
+        <div style="height:1px;background:#1e1e22;margin:3px 0 5px;position:relative"></div>
+        <div style="position:relative;color:#E8973E;font-size:21px;letter-spacing:2px;text-shadow:0 0 9px rgba(232,151,62,0.45);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ scratchDisplay }}</div>
+      </div>
+
+      <!-- right LSK -->
+      <div style="display:flex;flex-direction:column;gap:0;width:26px;padding:34px 0">
+        <sc-for list="{{ rightFields }}" as="f" hint-placeholder-count="6">
+          <div style="flex:1;display:flex;align-items:center;justify-content:center">
+            <button onClick="{{ f.onClick }}" style="background:linear-gradient(#3a3a41,#222226);border:1px solid #45454d;border-top-color:#54545c;border-radius:3px;width:24px;height:15px;cursor:pointer;padding:0;box-shadow:0 1px 2px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E"><span style="display:block;width:60%;height:3px;background:#c19a5a;border-radius:1px;margin:0 auto"></span></button>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ===== FUNCTION KEYS ===== -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:18px">
+      <sc-for list="{{ funcKeys }}" as="k" hint-placeholder-count="12">
+        <button onClick="{{ k.onClick }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#cfcfc7;font-size:10.5px;letter-spacing:0.5px;height:34px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.05)" style-hover="border-color:#E8973E;color:#E8973E">{{ k.label }}</button>
+      </sc-for>
+    </div>
+
+    <!-- ===== SLEW + AIRPORT ===== -->
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px">
+      <button onClick="{{ onAirport }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#cfcfc7;font-size:11px;letter-spacing:1px;height:36px;padding:0 16px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E;color:#E8973E">AIRPORT</button>
+      <div style="display:grid;grid-template-columns:repeat(4,40px);gap:7px">
+        <button onClick="{{ onLeft }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#E8973E;font-size:15px;height:36px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E">&larr;</button>
+        <button onClick="{{ onUp }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#E8973E;font-size:15px;height:36px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E">&uarr;</button>
+        <button onClick="{{ onDown }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#E8973E;font-size:15px;height:36px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E">&darr;</button>
+        <button onClick="{{ onRight }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-top-color:#55555d;border-radius:5px;color:#E8973E;font-size:15px;height:36px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,0.5)" style-hover="border-color:#E8973E">&rarr;</button>
+      </div>
+    </div>
+
+    <!-- ===== KEYBOARD ===== -->
+    <div style="display:flex;gap:14px;margin-top:16px;justify-content:center">
+      <!-- numeric -->
+      <div style="display:grid;grid-template-columns:repeat(3,44px);grid-auto-rows:40px;gap:7px;align-content:start">
+        <sc-for list="{{ numKeys }}" as="k" hint-placeholder-count="12">
+          <button onClick="{{ k.onClick }}" style="background:linear-gradient(#e9e9e6,#cfcfca);border:1px solid #b3b3ad;border-radius:6px;color:#1a1a1e;font-size:17px;font-weight:600;cursor:pointer;box-shadow:0 3px 4px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.7)" style-hover="background:linear-gradient(#fff,#dedcd6)">{{ k.label }}</button>
+        </sc-for>
+      </div>
+      <!-- alpha -->
+      <div style="display:grid;grid-template-columns:repeat(5,44px);grid-auto-rows:40px;gap:7px;align-content:start">
+        <sc-for list="{{ alphaKeys }}" as="k" hint-placeholder-count="30">
+          <button onClick="{{ k.onClick }}" style="{{ k.style }}">{{ k.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MSG LOG ============ -->
+  <div style="width:360px;max-width:100%;background:linear-gradient(#2b2b30,#161619);border:1px solid #3a3a41;border-radius:20px;padding:16px;box-shadow:0 30px 70px rgba(0,0,0,0.6),inset 0 2px 2px rgba(255,255,255,0.05)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 12px">
+      <span style="color:#cfcfc7;font-size:12px;letter-spacing:3px;font-weight:600">MESSAGE LOG</span>
+      <div style="display:flex;gap:8px">
+        <button onClick="{{ onLoad }}" style="background:linear-gradient(#33333a,#1d1d21);border:1px solid #45454d;border-radius:5px;color:#cfcfc7;font-size:10px;letter-spacing:1px;padding:6px 11px;cursor:pointer" style-hover="border-color:#4a4a52;color:#fff">LOAD</button>
+        <button onClick="{{ onSave }}" style="background:#1c1610;border:1px solid #E8973E;border-radius:5px;color:#E8973E;font-size:10px;letter-spacing:1px;padding:6px 11px;cursor:pointer;text-shadow:0 0 6px rgba(232,151,62,0.4)" style-hover="background:#241c12">SAVE</button>
+      </div>
+    </div>
+    <div data-log-scroll="1" style="background:linear-gradient(#0c0c0e,#090909);border:1px solid #000;border-radius:10px;padding:12px 13px;height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;font-family:'VT323',monospace;box-shadow:inset 0 0 40px rgba(0,0,0,0.8);position:relative">
+      <div style="position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(rgba(4,5,7,0.5) 1px,transparent 1.5px);background-size:3px 3px;opacity:0.55"></div>
+      <sc-for list="{{ logs }}" as="entry" hint-placeholder-count="6">
+        <div style="display:flex;gap:9px;font-size:17px;line-height:1.3;position:relative">
+          <span style="color:#6d6d66;white-space:nowrap">{{ entry.time }}</span>
+          <sc-if value="{{ entry.warn }}" hint-placeholder-val="{{ true }}"><span style="color:#c9a23c">{{ entry.text }}</span></sc-if>
+          <sc-if value="{{ entry.info }}" hint-placeholder-val="{{ true }}"><span style="color:#8f8f86">{{ entry.text }}</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px 16px;padding:12px 4px 0;font-size:11px;letter-spacing:0.5px">
+      <div><span style="color:#8f8f86">SHIP </span><span style="color:#5f96d6">{{ shipName }} {{ shipType }}</span></div>
+      <div><span style="color:#8f8f86">SAVED </span><span style="color:#E8973E">{{ lastSaved }}</span></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;connected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Status&quot;},&quot;shipName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;MANDALAY&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Ship&quot;},&quot;shipType&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;PYTHON&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Ship&quot;}}">
+class Component extends DCLogic {
+  MODES = [
+    {k:'fsd',label:'FSD ROUTE'},
+    {k:'sc',label:'SUPERCRUISE'},
+    {k:'wp',label:'WAYPOINT'},
+    {k:'robigo',label:'ROBIGO'},
+    {k:'afk',label:'AFK COMBAT'},
+    {k:'dss',label:'DSS ASSIST'},
+  ];
+  THROTTLES = ['---','25%','50%','75%','100%'];
+  FUNC = ['DIR','PROG','PERF','INIT','DATA','F-PLN','RAD NAV','FUEL PRED','SEC F-PLN','ATC COMM','MCDU MENU','AUTO TUNE'];
+
+  state = {
+    on:{fsd:false,sc:false,wp:false,robigo:false,afk:false,dss:false,fast:false},
+    autotune:false,
+    sunPitch:-1.0,
+    throttle:'---',
+    scratch:'',
+    lastSaved:'15:25:35',
+    logs:[
+      {time:'15:25:33',text:'WARNING: Perform Yaw Calibration.',warn:true},
+      {time:'15:25:33',text:'WARNING: Perform R/P/Y Calibration.',warn:true},
+      {time:'15:25:33',text:'WARNING: Perform Roll Calibration.',warn:true},
+      {time:'15:25:33',text:'WARNING: Perform Pitch Calibration.',warn:true},
+      {time:'15:25:34',text:'You have the latest version of EDAP!',warn:false},
+    ],
+  };
+
+  scrollLogToBottom(){ requestAnimationFrame(()=>{ const el=document.querySelector('[data-log-scroll]'); if(el) el.scrollTop=el.scrollHeight; }); }
+  componentDidMount(){ this.scrollLogToBottom(); }
+  componentDidUpdate(){ this.scrollLogToBottom(); }
+
+  now(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
+  log(text,warn){ this.setState(s=>({logs:[...s.logs,{time:this.now(),text,warn:!!warn}]})); }
+
+  // MCDU behaviour: if scratchpad has content, LSK enters it into the field; else runs the field action.
+  lsk(title, action){
+    const v=this.state.scratch.trim();
+    if(v){ this.log(title+' = '+v); this.setState({scratch:''}); }
+    else if(action) action();
+  }
+  toggleMode(k){ const nv=!this.state.on[k]; this.setState(s=>({on:{...s.on,[k]:nv}})); this.log(this.MODES.find(m=>m.k===k).label+' ASSIST -> '+(nv?'ON':'OFF')); }
+  toggleFast(){ const nv=!this.state.on.fast; this.setState(s=>({on:{...s.on,fast:nv}})); this.log('FAST TRAVEL -> '+(nv?'ON':'OFF')); }
+  toggleAutotune(){ const nv=!this.state.autotune; this.setState({autotune:nv}); this.log('AUTO-TUNE RPY -> '+(nv?'ON':'OFF')); }
+  sunStep(d){ this.setState(s=>({sunPitch:Math.round((s.sunPitch+d)*10)/10})); }
+  cycleThrottle(){ const i=this.THROTTLES.indexOf(this.state.throttle),n=this.THROTTLES[(i+1)%this.THROTTLES.length]; this.setState({throttle:n}); this.log('THROTTLE set to '+n); }
+  press(ch){ this.setState(s=>({scratch:(s.scratch+ch).slice(0,22)})); }
+  clear(){ this.setState(s=>({scratch:s.scratch.slice(0,-1)})); }
+
+  renderVals(){
+    const ACC='#E8973E';
+    const on={color:ACC,textShadow:'0 0 7px rgba(232,151,62,0.5)',cursor:'pointer'};
+    const off={color:'#9a9a90',cursor:'pointer'};
+    const cyan={color:'#5aa9c9',cursor:'pointer'};
+    const st=this.state;
+
+    const leftFields=[
+      {title:'FSD ROUTE',   action:()=>this.toggleMode('fsd')},
+      {title:'SUPERCRUISE', action:()=>this.toggleMode('sc')},
+      {title:'WAYPOINT',    action:()=>this.toggleMode('wp')},
+      {title:'ROBIGO',      action:()=>this.toggleMode('robigo')},
+      {title:'AFK COMBAT',  action:()=>this.toggleMode('afk')},
+      {title:'DSS ASSIST',  action:()=>this.toggleMode('dss')},
+    ];
+    const rightFields=[
+      {title:'FAST TRAVEL', action:()=>this.toggleFast()},
+      {title:'SUN PITCH',   action:()=>this.sunStep(0.1)},
+      {title:'THROTTLE',    action:()=>this.cycleThrottle()},
+      {title:'AUTO-TUNE',   action:()=>this.toggleAutotune()},
+      {title:'ALIGN TGT',   action:()=>this.log('ALIGN TO TARGET initiated.')},
+      {title:'MINI PANEL',  action:()=>this.log('MINI PANEL toggled.')},
+    ];
+
+    const lval=(i)=>{ const on6=st.on[this.MODES[i].k]; return {v:on6?'ON':'OFF', s:on6?on:off}; };
+    const rvals=[
+      {v:st.on.fast?'ON':'OFF', s:st.on.fast?on:off},
+      {v:st.sunPitch.toFixed(1)+'S', s:cyan},
+      {v:st.throttle, s:cyan},
+      {v:st.autotune?'ON':'OFF', s:st.autotune?on:off},
+      {v:'<ALIGN>', s:cyan},
+      {v:'<OPEN>', s:cyan},
+    ];
+
+    const rows=this.MODES.map((m,i)=>{
+      const L=lval(i), R=rvals[i];
+      return {
+        lhead:m.label, rhead:rightFields[i].title,
+        lval:'<'+L.v, lStyle:L.s, lClick:()=>this.lsk(m.label, leftFields[i].action),
+        rval:R.v+'>', rStyle:R.s, rClick:()=>this.lsk(rightFields[i].title, rightFields[i].action),
+      };
+    });
+
+    const alphaBtn={background:'linear-gradient(#33333a,#1d1d21)',border:'1px solid #45454d',borderTopColor:'#55555d',borderRadius:'6px',color:'#cfcfc7',fontSize:'15px',fontWeight:600,cursor:'pointer',boxShadow:'0 3px 4px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.05)'};
+    const specialBtn={...alphaBtn,color:ACC,fontSize:'11px',letterSpacing:'0.5px'};
+    const alphaDefs=[];
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(c=>alphaDefs.push({label:c,special:false,fn:()=>this.press(c)}));
+    alphaDefs.push({label:'/',special:false,fn:()=>this.press('/')});
+    alphaDefs.push({label:'SP',special:true,fn:()=>this.press(' ')});
+    alphaDefs.push({label:'OVFY',special:true,fn:()=>this.press('\u2610')});
+    alphaDefs.push({label:'CLR',special:true,fn:()=>this.clear()});
+
+    const connected=this.props.connected ?? true;
+    const statusColor=connected?'#58c46a':'#d0574a';
+
+    const funcActs={'AUTO TUNE':()=>this.toggleAutotune()};
+
+    return {
+      shipName:this.props.shipName ?? 'MANDALAY',
+      shipType:this.props.shipType ?? 'PYTHON',
+      lastSaved:st.lastSaved,
+      statusText:connected?'CONNECTED':'OFFLINE',
+      statusDotStyle:{display:'inline-block',width:'8px',height:'8px',borderRadius:'50%',background:statusColor,boxShadow:'0 0 8px '+statusColor,flexShrink:0},
+
+      leftFields, rightFields, rows,
+
+      funcKeys:this.FUNC.map(label=>({label, onClick:funcActs[label] || (()=>this.log(label+' page.'))})),
+      onAirport:()=>this.log('AIRPORT page.'),
+      onLeft:()=>this.log('SLEW LEFT.'), onRight:()=>this.log('SLEW RIGHT.'),
+      onUp:()=>this.sunStep(0.1), onDown:()=>this.sunStep(-0.1),
+
+      scratchDisplay:st.scratch+'\u258C',
+      numKeys:['1','2','3','4','5','6','7','8','9','.','0','+/-'].map(label=>({label, onClick:()=>this.press(label==='+/-'?'-':label)})),
+      alphaKeys:alphaDefs.map(d=>({label:d.label, style:d.special?specialBtn:alphaBtn, onClick:d.fn})),
+
+      onSave:()=>{ this.setState({lastSaved:this.now()}); this.log('SAVE ALL complete.'); },
+      onLoad:()=>this.log('LOAD ALL complete.'),
+
+      logs:st.logs.map(e=>({time:e.time, text:e.text, warn:e.warn, info:!e.warn})),
+    };
+  }
+}
+</script>
+</body>
+</html>
