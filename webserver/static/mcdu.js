@@ -48,7 +48,8 @@
     curveAxis: 'RollRate',   // 'RollRate' | 'PitchRate' | 'YawRate'
     curveEditor: null,       // McduCurves instance
     curveSpeed: null,        // speed demand last received with curve data
-    curveNeedsLoad: false    // true when we should load curve data from server
+    curveNeedsLoad: false,   // true when we should load curve data from server
+    curvePending: false      // a curve.get is in flight — don't re-send on render ticks
   };
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
@@ -138,23 +139,35 @@
         render();
         break;
       case 'error':
+        if (S.curvePending) {
+          // most likely our curve.get failed (e.g. ship not detected yet):
+          // stop re-requesting every render tick; re-entering PERF retries
+          S.curvePending = false;
+          S.curveNeedsLoad = false;
+        }
         appendLog('[error] ' + (msg.text || ''), false, true);
         break;
       case 'event':
         appendLog('[' + (msg.tag || 'event') + '] ' + bodyToStr(msg.body), false, false);
         break;
       case 'curve':
+        S.curvePending = false;
+        if (msg.axis && msg.axis !== S.curveAxis) break; // stale reply for a previous axis
         S.curveSpeed = msg.speed || null;
         if (S.curveNeedsLoad && S.curveEditor) {
           S.curveEditor.setPoints(msg.data || {});
           S.curveNeedsLoad = false;
-        } else if (!S.curveEditor) {
+        } else if (!S.curveEditor && S.page === 'PERF') {
           S.curveNeedsLoad = true;  // will be consumed when editor is built
           renderPERF();
         }
         break;
       case 'curve_saved':
         flash('CURVE UPDATED', 1500);
+        break;
+      case 'ship_saved':
+        flash(msg.ok ? 'SAVED TO DISK' : 'SAVE FAILED', 1800);
+        if (!msg.ok && msg.text) appendLog('[config] ' + msg.text, false, true);
         break;
       default:
         break;
@@ -549,7 +562,7 @@
     });
 
     // Row 2: hint
-    fill(2, { lv: 'DRAG POINTS TO EDIT', lvs: 's-hint', center: true });
+    fill(2, { lv: 'DRAG PTS - DBL-CLICK ADDS', lvs: 's-hint', center: true });
 
     // Row 3: select prev/next point
     fill(3, {
@@ -569,9 +582,13 @@
     actions.L[4] = { press: function () {}, input: curveSetValue };
     actions.R[4] = { press: curveSave, input: function () { return 'keep'; } };
 
-    // Row 5: save to disk
-    fill(5, { lv: 'SAVE ALL SETTINGS>', lvs: 's-on', center: true });
+    // Row 5: save to disk / delete selected point
+    fill(5, {
+      lv: '<SAVE TO DISK', lvs: 's-on',
+      rv: 'DEL PT>', rvs: 's-cyan'
+    });
     actions.L[5] = { press: curveSaveAll, input: function () { return 'keep'; } };
+    actions.R[5] = { press: curveDelPoint, input: function () { return false; } };
 
     // show the curve editor panel below the instrument
     curvePanel.hidden = false;
@@ -584,32 +601,33 @@
       });
       S.curveNeedsLoad = true;
     }
-    // request current curve data — only when needed, not on every render tick
-    if (S.curveNeedsLoad) {
-      sendRaw({ cmd: 'curve.get', axis: axis });
+    // request current curve data — only when needed and not already in flight
+    if (S.curveNeedsLoad && !S.curvePending) {
+      if (sendRaw({ cmd: 'curve.get', axis: axis })) S.curvePending = true;
     }
+  }
+
+  function curveSwitchAxis(axis) {
+    S.curveAxis = axis;
+    // clear and rebuild editor for new axis
+    if (S.curveEditor) { S.curveEditor.destroy(); S.curveEditor = null; }
+    curveView.innerHTML = '';
+    S.curveNeedsLoad = true;
+    S.curvePending = false;
+    renderPERF();
   }
 
   function curveAxisCycle() {
     var order = ['RollRate', 'PitchRate', 'YawRate'];
     var idx = order.indexOf(S.curveAxis);
-    S.curveAxis = order[(idx + 1) % 3];
-    // clear and rebuild editor for new axis
-    if (S.curveEditor) { S.curveEditor.destroy(); S.curveEditor = null; }
-    curveView.innerHTML = '';
-    S.curveNeedsLoad = true;
-    renderPERF();
+    curveSwitchAxis(order[(idx + 1) % 3]);
   }
 
   function curveAxisInput(v) {
     var m = { 'ROLL': 'RollRate', 'PITCH': 'PitchRate', 'YAW': 'YawRate' };
     var axis = m[v.trim().toUpperCase()];
     if (!axis) return false;
-    S.curveAxis = axis;
-    if (S.curveEditor) { S.curveEditor.destroy(); S.curveEditor = null; }
-    curveView.innerHTML = '';
-    S.curveNeedsLoad = true;
-    renderPERF();
+    curveSwitchAxis(axis);
     return true;
   }
 
@@ -647,21 +665,32 @@
     return true;
   }
 
+  function curveHasPoints() {
+    return S.curveEditor && Object.keys(S.curveEditor.getPoints()).length > 0;
+  }
+
   function curveSave() {
     if (!S.curveEditor || !ensureConn()) return;
-    var data = S.curveEditor.getPoints();
-    sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: data });
+    if (!curveHasPoints()) { flash('NO POINTS', 1500); return; }
+    sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: S.curveEditor.getPoints() });
   }
 
   function curveSaveAll() {
     if (!ensureConn()) return;
-    // save current curve first
-    if (S.curveEditor) {
+    // save current curve first (skip an empty one — the server rejects it)
+    if (curveHasPoints()) {
       sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: S.curveEditor.getPoints() });
     }
-    // then trigger full config save on server (ship configs to disk)
+    // then trigger full config save on server (ship configs to disk);
+    // the result flash comes from the server's ship_saved reply
     sendRaw({ cmd: 'config.save_ship' });
-    flash('SAVED TO DISK', 1500);
+  }
+
+  function curveDelPoint() {
+    if (!S.curveEditor) return;
+    if (S.curveEditor.selectedIndex() < 0) { flash('SELECT A POINT', 1500); return; }
+    if (!S.curveEditor.deleteSelected()) { flash('LAST POINT', 1500); return; }
+    renderPERF();
   }
 
   function curveOnChange(data) {

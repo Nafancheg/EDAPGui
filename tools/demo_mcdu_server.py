@@ -39,6 +39,15 @@ class FakeNavRoute:
         return ROUTE
 
 
+DEMO_CURVES = {
+    "RollRate": {"5.0": 40.0, "45.0": 80.0, "60.0": 80.0},
+    "PitchRate": {"0.5": 16.0, "30.0": 33.0, "60.0": 33.0},
+    "YawRate": {"0.5": 4.0, "30.0": 8.0, "60.0": 8.0},
+}
+SPEED_DEMANDS = ("Speed0", "Speed50", "Speed100",
+                 "SCSpeed0", "SCSpeed50", "SCSpeed100")
+
+
 class FakeAP:
     def __init__(self):
         self.ap_ckb = None
@@ -49,6 +58,14 @@ class FakeAP:
         self.sc = False
         self.fuel = itertools.cycle([72.4, 71.9, 71.3, 44.0, 23.5, 8.2, 91.0])
         self._fuel = 72.4
+        # curve editor support (curve.get / curve.set / config.save_ship)
+        self.current_ship_type = "krait_mkii"
+        self.speed_demand = "SCSpeed50"
+        self.ship_configs = {"Ship_Configs": {"krait_mkii": {
+            spd: {axis: dict(curve) for axis, curve in DEMO_CURVES.items()}
+            for spd in SPEED_DEMANDS
+        }}}
+        self.current_ship_cfg = self.ship_configs["Ship_Configs"]["krait_mkii"]
 
     def get_status_dict(self):
         self._fuel = next(self.fuel)
@@ -88,13 +105,20 @@ class FakeAP:
         self.ap_ckb("log", f"SC assist -> {v}")
 
     def set_throttle_0(self):
+        self.speed_demand = "SCSpeed0"
         self.ap_ckb("log", "Throttle set to 0%")
 
     def set_throttle_50(self):
+        self.speed_demand = "SCSpeed50"
         self.ap_ckb("log", "Throttle set to 50%")
 
     def set_throttle_100(self):
+        self.speed_demand = "SCSpeed100"
         self.ap_ckb("log", "Throttle set to 100%")
+
+    def update_ship_configs(self):
+        self.ap_ckb("log", "(demo) ship configs saved — nothing written to disk")
+        return True
 
 
 async def chatter(ap):

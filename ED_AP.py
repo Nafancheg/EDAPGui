@@ -472,8 +472,10 @@ class EDAutopilot:
             if ship:
                 self.load_ship_configuration(ship)
 
-    def update_ship_configs(self):
-        """ Update the user's ship configuration file."""
+    def update_ship_configs(self) -> bool:
+        """ Update the user's ship configuration file.
+        Returns True if the config was written, False when there is no ship
+        to save (on foot / ship not detected yet)."""
         # Check if a ship and not a suit (on foot)
         if self.current_ship_type in ship_size_map:
             # Ensure ship entry exists in config
@@ -490,6 +492,8 @@ class EDAutopilot:
 
             write_json_file(self.ship_configs, filepath='./configs/ship_configs.json')
             logger.debug(f"Saved ship config for: {self.current_ship_type}")
+            return True
+        return False
 
     def load_ship_configuration(self, ship_type):
         """ Load ship configuration with the following priority:

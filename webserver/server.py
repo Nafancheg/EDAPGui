@@ -160,25 +160,28 @@ async def _status_snapshot_loop(ed_ap, broadcaster: Broadcaster, interval: float
         await asyncio.sleep(interval)
 
 
-def _ensure_ship_cfg(ed_ap):
-    """Make sure current_ship_cfg is usable for the curve editor.
-    Tries journal, then disk config, then falls back to a synthetic default."""
-    if ed_ap.current_ship_cfg is not None:
-        return True
-    # 1) If core already detected a ship, use its config entry
-    ships = ed_ap.ship_configs.get('Ship_Configs', {}) if ed_ap.ship_configs else {}
-    if ships:
-        first = next(iter(ships.keys()))
-        ed_ap.current_ship_type = first
-        ed_ap.current_ship_cfg = ed_ap.ship_configs['Ship_Configs'][first]
-        return True
-    # 2) Nothing on disk — create a synthetic default
-    if ed_ap.ship_configs is None:
-        ed_ap.ship_configs = {'Ship_Configs': {}}
-    ed_ap.ship_configs['Ship_Configs']['_default'] = {}
-    ed_ap.current_ship_type = '_default'
-    ed_ap.current_ship_cfg = ed_ap.ship_configs['Ship_Configs']['_default']
-    return True
+def _normalize_curve(data):
+    """Validate and normalize a curve dict coming from the web UI.
+    Returns a {str: float} dict sorted ascending by angle, or None if invalid.
+    Sorting here is mandatory: JS objects serialize integer-like keys ("30")
+    before fractional ones ("0.5"), and the core's rate interpolation
+    (EDShipControl) iterates the dict in insertion order assuming ascending
+    angles. Keys are re-rendered via str(float) to match the core's
+    convert_curve_to_str format ("45.0", not "45")."""
+    if not isinstance(data, dict) or not data:
+        return None
+    entries = []
+    for k, v in data.items():
+        try:
+            angle = float(k)
+            rate = float(v)
+        except (TypeError, ValueError):
+            return None
+        if angle <= 0 or rate < 0:
+            return None
+        entries.append((angle, rate))
+    entries.sort()
+    return {str(angle): round(rate, 2) for angle, rate in entries}
 
 
 async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: dict):
@@ -226,8 +229,12 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
             # keep every connected client's view of the config in sync
             await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
     elif name == "config.save_ship":
-        ed_ap.update_ship_configs()
-        await ws.send_str(json.dumps({"type": "event", "tag": "config", "body": "Ship configs saved to disk."}))
+        if ed_ap.update_ship_configs():
+            await ws.send_str(json.dumps({"type": "ship_saved", "ok": True}))
+        else:
+            await ws.send_str(json.dumps({
+                "type": "ship_saved", "ok": False,
+                "text": f"not saved: no ship detected (current type: {ed_ap.current_ship_type!r})"}))
     elif name == "route.get":
         data = ed_ap.nav_route.get_nav_route_data()
         await ws.send_str(json.dumps({"type": "route", "data": map_nav_route(data)}))
@@ -235,30 +242,25 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         axis = cmd.get("axis")
         if axis not in ("RollRate", "PitchRate", "YawRate"):
             await ws.send_str(json.dumps({"type": "error", "text": f"invalid curve axis: {axis!r}"}))
-        elif not _ensure_ship_cfg(ed_ap):
+        elif ed_ap.current_ship_cfg is None:
             await ws.send_str(json.dumps({"type": "error", "text": "no ship config loaded — ship not detected yet"}))
         else:
             spd_key = ed_ap.speed_demand or 'SCSpeed50'
-            if spd_key not in ed_ap.current_ship_cfg:
-                ed_ap.current_ship_cfg[spd_key] = {}
-            spd = ed_ap.current_ship_cfg[spd_key]
+            spd = ed_ap.current_ship_cfg.get(spd_key)
             curve = spd.get(axis, {}) if isinstance(spd, dict) else {}
             await ws.send_str(json.dumps({"type": "curve", "axis": axis, "data": curve, "speed": spd_key}))
     elif name == "curve.set":
         axis = cmd.get("axis")
-        data = cmd.get("data")
+        curve = _normalize_curve(cmd.get("data"))
         if axis not in ("RollRate", "PitchRate", "YawRate"):
             await ws.send_str(json.dumps({"type": "error", "text": f"invalid curve axis: {axis!r}"}))
-        elif not isinstance(data, dict):
-            await ws.send_str(json.dumps({"type": "error", "text": "curve data must be a dict"}))
-        elif not _ensure_ship_cfg(ed_ap):
+        elif curve is None:
+            await ws.send_str(json.dumps({"type": "error", "text": "curve data must be a non-empty dict of positive angle -> rate numbers"}))
+        elif ed_ap.current_ship_cfg is None:
             await ws.send_str(json.dumps({"type": "error", "text": "no ship config loaded — ship not detected yet"}))
         else:
             spd_key = ed_ap.speed_demand or 'SCSpeed50'
-            if spd_key not in ed_ap.current_ship_cfg:
-                ed_ap.current_ship_cfg[spd_key] = {}
-            spd = ed_ap.current_ship_cfg[spd_key]
-            spd[axis] = data
+            ed_ap.current_ship_cfg.setdefault(spd_key, {})[axis] = curve
             ed_ap.ap_ckb('log', f'RPY curve updated: {spd_key}/{axis}')
             await ws.send_str(json.dumps({"type": "curve_saved", "axis": axis}))
     else:

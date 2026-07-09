@@ -12,6 +12,8 @@
  *   editor.setSelectedValue(y)  → set Y of selected point (from scratchpad)
  *   editor.selectIndex(i)       → select point by index (0-based)
  *   editor.selectedIndex()      → current selected index, or -1
+ *   editor.addPoint(x, y)       → add a point (also: double-click empty area)
+ *   editor.deleteSelected()     → remove selected point (keeps at least one)
  *   editor.destroy()            → remove SVG, unbind listeners
  */
 (function () {
@@ -449,8 +451,16 @@
         }
       };
 
-      this._onResize = function () { self._redraw(); };
+      this._onDblClick = function (e) {
+        if (self._findPoint(e.clientX, e.clientY) >= 0) return;
+        var rect = self.svg.getBoundingClientRect();
+        var extent = self._dataExtent();
+        var area = self._plotArea();
+        var data = self._fromSvg(e.clientX - rect.left, e.clientY - rect.top, extent, area);
+        self.addPoint(data.x, data.y);
+      };
 
+      this.svg.addEventListener('dblclick', this._onDblClick);
       this.svg.addEventListener('mousedown', this._onMouseDown);
       document.addEventListener('mousemove', this._onMouseMove);
       document.addEventListener('mouseup', this._onMouseUp);
@@ -482,9 +492,35 @@
 
     setSelectedValue: function (y) {
       if (this.selIdx < 0 || this.selIdx >= this.entries.length) return false;
-      var val = toFloat(y);
+      var val = parseFloat(y);
       if (isNaN(val) || val < 0) return false;
       this.entries[this.selIdx][1] = Math.round(val * 100) / 100;
+      this._redraw();
+      if (this._onChange) this._onChange(strDict(this.entries));
+      return true;
+    },
+
+    addPoint: function (x, y) {
+      var px = Math.max(0.1, Math.round(toFloat(x) * 10) / 10);
+      var py = Math.max(0, Math.round(toFloat(y) * 100) / 100);
+      for (var i = 0; i < this.entries.length; i++) {
+        if (Math.abs(this.entries[i][0] - px) < 0.05) return false; // angle taken
+      }
+      this.entries.push([px, py]);
+      this.entries.sort(function (a, b) { return a[0] - b[0]; });
+      for (i = 0; i < this.entries.length; i++) {
+        if (this.entries[i][0] === px) { this.selIdx = i; break; }
+      }
+      this._redraw();
+      if (this._onChange) this._onChange(strDict(this.entries));
+      return true;
+    },
+
+    deleteSelected: function () {
+      if (this.selIdx < 0 || this.selIdx >= this.entries.length) return false;
+      if (this.entries.length <= 1) return false; // keep at least one point
+      this.entries.splice(this.selIdx, 1);
+      if (this.selIdx >= this.entries.length) this.selIdx = this.entries.length - 1;
       this._redraw();
       if (this._onChange) this._onChange(strDict(this.entries));
       return true;
@@ -502,6 +538,7 @@
     },
 
     destroy: function () {
+      this.svg.removeEventListener('dblclick', this._onDblClick);
       this.svg.removeEventListener('mousedown', this._onMouseDown);
       document.removeEventListener('mousemove', this._onMouseMove);
       document.removeEventListener('mouseup', this._onMouseUp);
