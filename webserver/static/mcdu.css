@@ -338,6 +338,31 @@ body{
 .log-view::-webkit-scrollbar-thumb{ background:#2c2c31; border-radius:3px; }
 .log-view{ scrollbar-width:thin; scrollbar-color:#2c2c31 transparent; }
 
+/* ---- RPY curve editor panel (PERF page) ---- */
+.curve-panel{ margin-top:12px; }
+.curve-panel-head{
+  color:#cfcfc7;
+  font-size:12px;
+  letter-spacing:3px;
+  font-weight:600;
+  padding:0 4px 10px;
+}
+.curve-panel-screen{
+  position:relative;
+  height:260px;
+  background:linear-gradient(#0c0c0e,#090909);
+  border:1px solid #000;
+  border-radius:10px;
+  box-shadow:inset 0 0 40px rgba(0,0,0,.8);
+  overflow:hidden;
+}
+.curve-panel-screen .layer-dots{ opacity:.55; z-index:1; }
+.curve-view{
+  position:absolute;
+  inset:0;
+  z-index:2;
+}
+
 /* ---- narrow / tablet portrait ---- */
 @media (max-width:600px){
   .stage{ padding:12px 6px 26px; }

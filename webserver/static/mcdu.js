@@ -15,6 +15,8 @@
   var logView = $('logView');
   var connDot = $('connDot');
   var connLabel = $('connLabel');
+  var curvePanel = $('curvePanel');
+  var curveView = $('curveView');
 
   var rows = [].slice.call(document.querySelectorAll('.core .row')).map(function (el) {
     return {
@@ -42,7 +44,11 @@
     routeLoc: null,          // location last used to refresh the route
     flash: null,             // transient scratchpad message
     flashSaved: '',
-    logStick: true
+    logStick: true,
+    curveAxis: 'RollRate',   // 'RollRate' | 'PitchRate' | 'YawRate'
+    curveEditor: null,       // McduCurves instance
+    curveSpeed: null,        // speed demand last received with curve data
+    curveNeedsLoad: false    // true when we should load curve data from server
   };
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
@@ -136,6 +142,19 @@
         break;
       case 'event':
         appendLog('[' + (msg.tag || 'event') + '] ' + bodyToStr(msg.body), false, false);
+        break;
+      case 'curve':
+        S.curveSpeed = msg.speed || null;
+        if (S.curveNeedsLoad && S.curveEditor) {
+          S.curveEditor.setPoints(msg.data || {});
+          S.curveNeedsLoad = false;
+        } else if (!S.curveEditor) {
+          S.curveNeedsLoad = true;  // will be consumed when editor is built
+          renderPERF();
+        }
+        break;
+      case 'curve_saved':
+        flash('CURVE UPDATED', 1500);
         break;
       default:
         break;
@@ -306,6 +325,7 @@
     var order = [0, 50, 100];
     var next = (S.throttle === null) ? 0 : order[(order.indexOf(S.throttle) + 1) % 3];
     if (sendRaw({ cmd: 'throttle.set', level: next })) S.throttle = next;
+    if (S.page === 'PERF') S.curveNeedsLoad = true;
     render();
   }
   function throttleInput(v) {
@@ -313,7 +333,7 @@
     if (n !== '0' && n !== '50' && n !== '100') return false;
     if (!ensureConn()) return 'keep';
     var lvl = parseInt(n, 10);
-    if (sendRaw({ cmd: 'throttle.set', level: lvl })) { S.throttle = lvl; render(); return true; }
+    if (sendRaw({ cmd: 'throttle.set', level: lvl })) { S.throttle = lvl; if (S.page === 'PERF') S.curveNeedsLoad = true; render(); return true; }
     return 'keep';
   }
 
@@ -497,9 +517,165 @@
     fill(5, { lv: 'FUEL PREDICTION AWAITS FUELSTATE (PHASE 3)', lvs: 's-msg', center: true });
   }
 
+  function renderPERF() {
+    scrTitle.textContent = 'RPY CURVES';
+    scrInd.textContent = 'PERF';
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var axisNames = { RollRate: 'ROLL', PitchRate: 'PITCH', YawRate: 'YAW' };
+    var axisLabels = { RollRate: 'Deg/Sec', PitchRate: 'Deg/Sec', YawRate: 'Deg/Sec' };
+    var axis = S.curveAxis;
+
+    var thr = (S.throttle === null) ? '---' : S.throttle + '%';
+    var spd = S.curveSpeed || '---';
+
+    // Row 0: axis selector (L1-L3) + throttle (R1)
+    fill(0, {
+      lh: 'AXIS',
+      lv: axis === 'RollRate' ? '<ROLL' : axis === 'PitchRate' ? '<PITCH' : '<YAW',
+      lvs: 's-on',
+      rh: 'THROTTLE', rv: thr, rvs: 's-cyan'
+    });
+    actions.L[0] = { press: curveAxisCycle, input: curveAxisInput };
+    actions.R[0] = { press: throttlePress, input: throttleInput };
+
+    // Row 1: axis labels
+    fill(1, {
+      lh: 'CURVE',
+      lv: axisNames[axis] + ' RATE',
+      lvs: 's-normal',
+      rh: 'SPEED', rv: spd, rvs: 's-muted'
+    });
+
+    // Row 2: hint
+    fill(2, { lv: 'DRAG POINTS TO EDIT', lvs: 's-hint', center: true });
+
+    // Row 3: select prev/next point
+    fill(3, {
+      lh: '', lv: 'SEL PT<', lvs: 's-cyan',
+      rh: '', rv: '>NEXT PT', rvs: 's-cyan'
+    });
+    actions.L[3] = { press: curveSelPrev, input: function () { return false; } };
+    actions.R[3] = { press: curveSelNext, input: function () { return false; } };
+
+    // Row 4: selected point info / set value from scratchpad
+    fill(4, {
+      lh: 'SET VAL',
+      lv: curveSelLabel(),
+      lvs: 's-normal',
+      rh: '', rv: 'SAVE>', rvs: 's-on'
+    });
+    actions.L[4] = { press: function () {}, input: curveSetValue };
+    actions.R[4] = { press: curveSave, input: function () { return 'keep'; } };
+
+    // Row 5: save to disk
+    fill(5, { lv: 'SAVE ALL SETTINGS>', lvs: 's-on', center: true });
+    actions.L[5] = { press: curveSaveAll, input: function () { return 'keep'; } };
+
+    // show the curve editor panel below the instrument
+    curvePanel.hidden = false;
+    if (!S.curveEditor) {
+      S.curveEditor = McduCurves.mount(curveView, {}, {
+        title: axisNames[axis] + ' RATE',
+        xLabel: 'Angle (deg)',
+        yLabel: axisLabels[axis],
+        onChange: curveOnChange
+      });
+      S.curveNeedsLoad = true;
+    }
+    // request current curve data — only when needed, not on every render tick
+    if (S.curveNeedsLoad) {
+      sendRaw({ cmd: 'curve.get', axis: axis });
+    }
+  }
+
+  function curveAxisCycle() {
+    var order = ['RollRate', 'PitchRate', 'YawRate'];
+    var idx = order.indexOf(S.curveAxis);
+    S.curveAxis = order[(idx + 1) % 3];
+    // clear and rebuild editor for new axis
+    if (S.curveEditor) { S.curveEditor.destroy(); S.curveEditor = null; }
+    curveView.innerHTML = '';
+    S.curveNeedsLoad = true;
+    renderPERF();
+  }
+
+  function curveAxisInput(v) {
+    var m = { 'ROLL': 'RollRate', 'PITCH': 'PitchRate', 'YAW': 'YawRate' };
+    var axis = m[v.trim().toUpperCase()];
+    if (!axis) return false;
+    S.curveAxis = axis;
+    if (S.curveEditor) { S.curveEditor.destroy(); S.curveEditor = null; }
+    curveView.innerHTML = '';
+    S.curveNeedsLoad = true;
+    renderPERF();
+    return true;
+  }
+
+  function curveSelPrev() {
+    if (!S.curveEditor) return;
+    var idx = S.curveEditor.selectedIndex();
+    if (idx < 0) idx = 0;
+    S.curveEditor.selectIndex(Math.max(0, idx - 1));
+    renderPERF();
+  }
+
+  function curveSelNext() {
+    if (!S.curveEditor) return;
+    var idx = S.curveEditor.selectedIndex();
+    S.curveEditor.selectIndex(idx + 1);
+    renderPERF();
+  }
+
+  function curveSelLabel() {
+    if (!S.curveEditor) return '---';
+    var idx = S.curveEditor.selectedIndex();
+    if (idx < 0) return 'NO SELECTION';
+    var pts = S.curveEditor.getPoints();
+    var keys = Object.keys(pts).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
+    var k = keys[idx];
+    return k + '° → ' + pts[k];
+  }
+
+  function curveSetValue(v) {
+    if (!S.curveEditor) return false;
+    var n = parseFloat(v.trim());
+    if (isNaN(n) || n < 0) return false;
+    if (!S.curveEditor.setSelectedValue(n)) { flash('SELECT A POINT', 1500); return 'keep'; }
+    renderPERF();
+    return true;
+  }
+
+  function curveSave() {
+    if (!S.curveEditor || !ensureConn()) return;
+    var data = S.curveEditor.getPoints();
+    sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: data });
+  }
+
+  function curveSaveAll() {
+    if (!ensureConn()) return;
+    // save current curve first
+    if (S.curveEditor) {
+      sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: S.curveEditor.getPoints() });
+    }
+    // then trigger full config save on server (ship configs to disk)
+    sendRaw({ cmd: 'config.save_ship' });
+    flash('SAVED TO DISK', 1500);
+  }
+
+  function curveOnChange(data) {
+    // auto-save on every drag release — curve is updated in memory on the server
+    sendRaw({ cmd: 'curve.set', axis: S.curveAxis, data: data });
+  }
+
+  function hideCurvePanel() {
+    curvePanel.hidden = true;
+  }
+
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'INIT', 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL' };
+  var PAGE_FOR_KEY = { 'DIR': 'INIT', 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF' };
 
   function renderSub() {
     var snap = S.snap;
@@ -519,7 +695,11 @@
 
     if (S.page === 'ROUTE') renderROUTE();
     else if (S.page === 'FUEL') renderFUEL();
+    else if (S.page === 'PERF') renderPERF();
     else renderINIT();
+
+    // show/hide curve panel
+    if (S.page !== 'PERF') hideCurvePanel();
 
     // highlight active function key
     fkEls.forEach(function (b) {
@@ -543,8 +723,10 @@
   // ---- navigation ----
   function setPage(p) {
     if (S.page === p) return;
+    if (S.page === 'PERF') hideCurvePanel();
     S.page = p;
     if (p === 'ROUTE') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
+    if (p === 'PERF') S.curveNeedsLoad = true;
     render();
   }
 
@@ -558,6 +740,9 @@
     if (S.page === 'ROUTE') {
       if (dir === 'l' || dir === 'u') { S.routePage = Math.max(0, S.routePage - 1); render(); }
       else if (dir === 'r' || dir === 'd') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }
+    } else if (S.page === 'PERF') {
+      if (dir === 'l') curveSelPrev();
+      else if (dir === 'r') curveSelNext();
     }
   }
 

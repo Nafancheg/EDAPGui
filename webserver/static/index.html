@@ -103,6 +103,15 @@
       <button type="button" class="slew" data-slew="r" aria-label="slew right">&#8594;</button>
     </div>
 
+    <!-- RPY curve editor panel (PERF page) -->
+    <div id="curvePanel" class="curve-panel" hidden>
+      <div class="curve-panel-head">RPY CURVE EDITOR</div>
+      <div class="curve-panel-screen">
+        <div class="layer-dots"></div>
+        <div id="curveView" class="curve-view"></div>
+      </div>
+    </div>
+
     <!-- message log (per mockup's MESSAGE LOG unit) -->
     <div class="logpanel">
       <div class="logpanel-head">MESSAGE LOG</div>
@@ -114,6 +123,7 @@
 
   </div>
 </div>
+<script src="/static/mcdu_curves.js?v=1"></script>
 <script src="/static/mcdu.js?v=6"></script>
 </body>
 </html>
