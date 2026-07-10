@@ -17,6 +17,8 @@
   var connLabel = $('connLabel');
   var curvePanel = $('curvePanel');
   var curveView = $('curveView');
+  var ledProg = $('ledProg');
+  var ledFuel = $('ledFuel');
 
   var rows = [].slice.call(document.querySelectorAll('.core .row')).map(function (el) {
     return {
@@ -93,7 +95,7 @@
 
   // require a live connection before sending a state-changing command
   function ensureConn() {
-    if (!S.connected) { flash('NOT CONNECTED', 2000); return false; }
+    if (!S.connected) { flash('NOT CONNECTED', 1500); return false; }
     return true;
   }
 
@@ -250,6 +252,21 @@
     renderScratch();
   }
 
+  // long CLR: holding Backspace >=600 ms clears the whole scratchpad
+  var clrHoldT = null;
+  function clrHoldStart() {
+    if (clrHoldT) clearTimeout(clrHoldT);
+    clrHoldT = setTimeout(function () {
+      if (S.flash) clearFlashNow();
+      S.scratch = '';
+      if (spInput.value) spInput.value = '';
+      renderScratch();
+    }, 600);
+  }
+  function clrHoldEnd() {
+    if (clrHoldT) { clearTimeout(clrHoldT); clrHoldT = null; }
+  }
+
   function renderScratch() {
     if (S.flash) {
       spInput.value = S.flash;
@@ -279,6 +296,7 @@
     S.scratch = v;
   });
   spInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Backspace' && !e.repeat) clrHoldStart();
     if (e.key === 'Escape') {
       if (S.flash) clearFlashNow();
       S.scratch = '';
@@ -293,6 +311,9 @@
       }
     }
   });
+  spInput.addEventListener('keyup', function (e) {
+    if (e.key === 'Backspace') clrHoldEnd();
+  });
 
   // ---- LSK dispatch ----
   function doLSK(side, i) {
@@ -302,9 +323,9 @@
         var res = a.input(S.scratch);
         if (res === true) { S.scratch = ''; renderScratch(); render(); }
         else if (res === 'keep') { /* accepted, keep scratch */ }
-        else { flash('NOT ALLOWED', 1500); }
+        else { flash('INVALID', 1500); }   // handler rejected the entry format
       } else {
-        flash('NOT ALLOWED', 1500);
+        flash('NOT ALLOWED', 1500);        // this LSK takes no scratchpad entry
       }
     } else if (a && a.press) {
       a.press();
@@ -356,13 +377,6 @@
     S.assist.fsd = false; S.assist.sc = false;
     render();
   }
-  function stopAllInput() {
-    if (!ensureConn()) return 'keep';
-    sendRaw({ cmd: 'assist.stop_all' });
-    S.assist.fsd = false; S.assist.sc = false;
-    render();
-    return 'keep';
-  }
 
   function refreshRoute() {
     if (ensureConn()) sendRaw({ cmd: 'route.get' });
@@ -402,8 +416,7 @@
 
   // ---- pages ----
   function renderINIT() {
-    scrTitle.textContent = 'EDAUTOPILOT';
-    scrInd.textContent = 'INIT';
+    setHeader('EDAUTOPILOT', 'INIT');
     clearActions();
 
     var snap = S.snap;
@@ -426,7 +439,7 @@
 
     fill(2, {
       lh: 'FAST TRAVEL', lv: S.fastTravel ? '<ON' : '<OFF', lvs: S.fastTravel ? 's-on' : 's-off',
-      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: 's-normal'
+      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: snap.ship_status ? 's-normal' : 's-muted'
     });
     actions.L[2] = { press: ftToggle, input: function () { return false; } };
 
@@ -437,32 +450,31 @@
       starState = snap.scoopable ? 's-on' : 's-alert';
     }
     fill(3, {
-      lh: 'SYSTEM', lv: snap.location ? String(snap.location) : '---', lvs: 's-normal',
+      lh: 'SYSTEM', lv: snap.location ? String(snap.location) : '---', lvs: snap.location ? 's-normal' : 's-muted',
       rh: starHead, rv: starVal, rvs: starState
     });
 
+    var noJumps = (snap.jump_cnt === null || snap.jump_cnt === undefined)
+      && (snap.total_jumps === null || snap.total_jumps === undefined);
     var jc = (snap.jump_cnt === null || snap.jump_cnt === undefined) ? '-' : snap.jump_cnt;
     var tj = (snap.total_jumps === null || snap.total_jumps === undefined) ? '-' : snap.total_jumps;
     fill(4, {
-      lh: 'JUMPS', lv: jc + '/' + tj, lvs: 's-normal',
-      rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: 's-normal'
+      lh: 'JUMPS', lv: noJumps ? '---' : jc + '/' + tj, lvs: noJumps ? 's-muted' : 's-normal',
+      rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted'
     });
 
     fill(5, {
-      lh: 'TARGET', lv: snap.target ? String(snap.target) : '---', lvs: 's-normal',
-      rh: 'STOP ALL', rv: 'STOP ALL>', rvs: 's-alert'
+      lh: 'TARGET', lv: snap.target ? String(snap.target) : '---', lvs: snap.target ? 's-normal' : 's-muted'
     });
-    actions.R[5] = { press: stopAllPress, input: stopAllInput };
   }
 
   function renderROUTE() {
-    scrTitle.textContent = 'F-PLN';
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
     var sys = S.route.systems || [];
     if (!S.route.active || sys.length === 0) {
-      scrInd.textContent = 'ROUTE 1/1 →';
+      setHeader('F-PLN', 'ROUTE 1/1 →');
       fill(2, { lv: 'NO ACTIVE ROUTE', lvs: 's-muted', center: true });
       fill(3, { lv: 'PLOT ROUTE IN GALAXY MAP', lvs: 's-hint', center: true });
       fill(5, { rh: '', rv: 'REFRESH>', rvs: 's-cyan' });
@@ -473,7 +485,7 @@
     var pages = routePages();
     if (S.routePage > pages - 1) S.routePage = pages - 1;
     if (S.routePage < 0) S.routePage = 0;
-    scrInd.textContent = 'ROUTE ' + (S.routePage + 1) + '/' + pages + ' →';
+    setHeader('F-PLN', 'ROUTE ' + (S.routePage + 1) + '/' + pages + ' →');
 
     var start = S.routePage * 6;
     var loc = S.snap.location ? String(S.snap.location).toLowerCase() : null;
@@ -503,14 +515,13 @@
     if (filled < 6) {
       fill(filled, {
         lh: 'TOTAL', lv: (sys.length - 1) + ' JUMPS', lvs: 's-cyan',
-        rh: 'DEST', rv: S.route.destination ? String(S.route.destination) : '?', rvs: 's-normal'
+        rh: 'DEST', rv: S.route.destination ? String(S.route.destination) : '---', rvs: S.route.destination ? 's-normal' : 's-muted'
       });
     }
   }
 
   function renderFUEL() {
-    scrTitle.textContent = 'FUEL PRED';
-    scrInd.textContent = 'FUEL';
+    setHeader('FUEL PRED', 'FUEL');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
@@ -531,8 +542,7 @@
   }
 
   function renderPERF() {
-    scrTitle.textContent = 'RPY CURVES';
-    scrInd.textContent = 'PERF';
+    setHeader('RPY CURVES', 'PERF');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
@@ -548,7 +558,7 @@
       lh: 'AXIS',
       lv: axis === 'RollRate' ? '<ROLL' : axis === 'PitchRate' ? '<PITCH' : '<YAW',
       lvs: 's-on',
-      rh: 'THROTTLE', rv: thr, rvs: 's-cyan'
+      rh: 'THROTTLE', rv: thr, rvs: (S.throttle === null) ? 's-muted' : 's-cyan'
     });
     actions.L[0] = { press: curveAxisCycle, input: curveAxisInput };
     actions.R[0] = { press: throttlePress, input: throttleInput };
@@ -706,7 +716,22 @@
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
   var PAGE_FOR_KEY = { 'DIR': 'INIT', 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF' };
 
+  // header contract: row 1 = page title + context indicator (page N/M or phase
+  // name; muted when the viewed context is not the active one), row 2 = AP/MODE
+  function setHeader(title, ind, muted) {
+    scrTitle.textContent = title;
+    scrInd.textContent = ind || '';
+    scrInd.className = 'title-ind' + (muted ? ' muted' : '');
+  }
+
   function renderSub() {
+    if (!S.connected) {
+      subL.textContent = 'AP: ---';
+      subR.textContent = 'OFFLINE';
+      subR.className = 'sub-right offline';
+      return;
+    }
+    subR.className = 'sub-right';
     var snap = S.snap;
     subL.textContent = 'AP: ' + (snap.ap_state || S.statusline || '---');
     subR.textContent = 'MODE ' + String(snap.ap_mode || '---').toUpperCase();
@@ -717,10 +742,27 @@
     connLabel.textContent = S.connected ? 'CONNECTED' : 'OFFLINE';
   }
 
+  // annunciator LEDs: PROG = assist engaged; FUEL PRED = fuel status.
+  // Fuel status is derived on the client from fuel_percent until the backend
+  // fuel-state enum arrives (Phase 7.3.2): <10% critical, <25% warning.
+  function renderLeds() {
+    var engaged = isOn('fsd') || isOn('sc');
+    ledProg.className = 'fk-led' + (engaged ? ' led-g' : '');
+    var cls = '';
+    if (S.connected) {
+      var n = Number(S.snap.fuel_percent);
+      if (S.snap.fuel_percent !== null && S.snap.fuel_percent !== undefined && !isNaN(n)) {
+        cls = n < 10 ? ' led-r' : (n < 25 ? ' led-y' : ' led-g');
+      }
+    }
+    ledFuel.className = 'fk-led' + cls;
+  }
+
   function render() {
     core.className = 'core page-' + S.page.toLowerCase();
     renderConn();
     renderSub();
+    renderLeds();
 
     if (S.page === 'ROUTE') renderROUTE();
     else if (S.page === 'FUEL') renderFUEL();
@@ -766,9 +808,11 @@
   }
 
   function slew(dir) {
+    // contract: list pages turn on left/right only; up/down are reserved
+    // (down = return to the active phase once the PROG phase page exists)
     if (S.page === 'ROUTE') {
-      if (dir === 'l' || dir === 'u') { S.routePage = Math.max(0, S.routePage - 1); render(); }
-      else if (dir === 'r' || dir === 'd') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }
+      if (dir === 'l') { S.routePage = Math.max(0, S.routePage - 1); render(); }
+      else if (dir === 'r') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }
     } else if (S.page === 'PERF') {
       if (dir === 'l') curveSelPrev();
       else if (dir === 'r') curveSelNext();
@@ -800,16 +844,48 @@
     });
   });
 
+  // STOP ALL: guarded hardware button (outside the LSK grid).
+  // Tap the lid to lift it, then press the red button; the lid re-closes on
+  // a second tap, on any click elsewhere, or automatically after 4 s.
+  var estopEl = $('estop');
+  var estopBtn = $('estopBtn');
+  var estopCover = $('estopCover');
+  var estopT = null;
+  function estopDisarm() {
+    estopEl.classList.remove('armed');
+    if (estopT) { clearTimeout(estopT); estopT = null; }
+  }
+  estopCover.addEventListener('click', function () {
+    if (estopEl.classList.contains('armed')) { estopDisarm(); return; }
+    estopEl.classList.add('armed');
+    if (estopT) clearTimeout(estopT);
+    estopT = setTimeout(estopDisarm, 4000);
+  });
+  estopBtn.addEventListener('click', function () {
+    if (!estopEl.classList.contains('armed')) return;
+    stopAllPress();
+    estopDisarm();
+  });
+  document.addEventListener('click', function (ev) {
+    if (estopEl.classList.contains('armed') && !estopEl.contains(ev.target)) estopDisarm();
+  });
+
   // physical keyboard (scratchpad input; on-screen keypads removed by design)
   window.addEventListener('keydown', function (e) {
     var tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     var k = e.key;
-    if (k === 'Backspace') { e.preventDefault(); clr(); }
+    if (k === 'Backspace') {
+      e.preventDefault();
+      if (!e.repeat) { clr(); clrHoldStart(); }
+    }
     else if (k === 'Escape') { if (S.flash) clearFlashNow(); S.scratch = ''; renderScratch(); }
     else if (k === ' ') { e.preventDefault(); appendChar(' '); }
     else if (physicalLatin(e) !== null) { appendChar(physicalLatin(e)); }
-    else if (k && k.length === 1 && /[a-zA-Z0-9./-]/.test(k)) { appendChar(k.toUpperCase()); }
+    else if (k && k.length === 1 && /[a-zA-Z0-9./+-]/.test(k)) { appendChar(k.toUpperCase()); }
+  });
+  window.addEventListener('keyup', function (e) {
+    if (e.key === 'Backspace') clrHoldEnd();
   });
 
   // ---- boot ----

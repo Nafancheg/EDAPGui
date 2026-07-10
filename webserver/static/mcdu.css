@@ -118,6 +118,7 @@ body{
 }
 .title-text{ color:var(--title); font-size:20px; letter-spacing:2px; }
 .title-ind{ color:#c9c9c1; font-size:18px; letter-spacing:1px; }
+.title-ind.muted{ color:var(--dim); }
 
 .scr-sub{
   grid-row:2;
@@ -133,6 +134,7 @@ body{
 }
 .sub-left{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sub-right{ flex:0 0 auto; }
+.sub-right.offline{ color:var(--alert); letter-spacing:1px; }
 
 .divider{ height:1px; background:#26262b; margin:0 12px; }
 .div-top{ grid-row:3; }
@@ -297,6 +299,7 @@ body{
   margin-top:16px;
 }
 .fk{
+  position:relative;
   min-height:44px;
   background:linear-gradient(#33333a,#1d1d21);
   border:1px solid #45454d;
@@ -311,9 +314,21 @@ body{
 .fk:hover{ border-color:var(--amber); color:var(--amber); }
 .fk-active{ border-color:var(--amber); color:var(--amber); }
 
+/* annunciator LED (top-right corner of a function key) — muted real-LED tones, no blinking */
+.fk-led{
+  position:absolute; top:4px; right:4px;
+  width:7px; height:7px; border-radius:50%;
+  background:#1a1a1c;                      /* dark = off / no data */
+  box-shadow:inset 0 0 2px rgba(0,0,0,.85);
+}
+.fk-led.led-g{ background:#2f7d45; box-shadow:0 0 3px rgba(63,150,80,.45), inset 0 0 2px rgba(0,0,0,.4); }
+.fk-led.led-y{ background:#a17d22; box-shadow:0 0 3px rgba(180,140,45,.45), inset 0 0 2px rgba(0,0,0,.4); }
+.fk-led.led-r{ background:#9a352c; box-shadow:0 0 3px rgba(170,60,50,.5), inset 0 0 2px rgba(0,0,0,.4); }
+
 /* ---- slew row (left-aligned, like the AIRPORT/arrow block on the real unit) ---- */
 .slewrow{
   display:flex;
+  align-items:center;
   justify-content:flex-start;
   gap:7px;
   margin-top:12px;
@@ -331,6 +346,48 @@ body{
   cursor:pointer;
 }
 .slew:hover{ border-color:var(--amber); }
+
+/* ---- STOP ALL: guarded emergency button (outside the LSK grid) ----
+   Same height as a slew key, function-key width, far right of the slew row.
+   A hinged metal lid must be lifted (tap) before the red button can be pressed. */
+.estop{
+  margin-left:auto;
+  width:84px;
+  height:44px;
+  flex:0 0 auto;
+  position:relative;
+  perspective:260px;
+}
+.estop-btn{
+  position:absolute; inset:0; width:100%; height:100%;
+  border-radius:5px; cursor:pointer;
+  background:radial-gradient(circle at 50% 38%, #d0574a, #8f2f26 70%);
+  border:1px solid #6d241d; border-top-color:#c85448;
+  color:#ffd9d3; font-family:var(--font-mono); font-weight:700; font-size:13px; letter-spacing:1px;
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.25), inset 0 -2px 4px rgba(0,0,0,.5);
+}
+.estop-btn:active{ background:radial-gradient(circle at 50% 38%, #e0685a, #7d2820 70%); }
+.estop.armed .estop-btn{ box-shadow:inset 0 1px 2px rgba(255,255,255,.3), 0 0 8px rgba(208,87,74,.55); }
+/* the guard: a hinged metal lid that flips up from the top edge */
+.estop-cover{
+  position:absolute; inset:0; border-radius:5px; cursor:pointer;
+  transform-origin:top center; transition:transform .18s ease;
+  background:linear-gradient(#4a4a52,#2a2a30);
+  border:1px solid #56565f; border-top-color:#6b6b76;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.18), 0 2px 4px rgba(0,0,0,.5);
+  display:flex; align-items:flex-end; justify-content:center; padding-bottom:3px;
+}
+/* hazard stripe band across the closed lid */
+.estop-cover::before{
+  content:""; position:absolute; left:0; right:0; top:11px; height:9px;
+  background:repeating-linear-gradient(45deg,#b8902e 0 5px,#242427 5px 10px); opacity:.9;
+}
+/* grab tab at the bottom edge of the lid */
+.estop-cover::after{
+  content:""; position:absolute; left:14px; right:14px; bottom:3px; height:3px; border-radius:2px;
+  background:#1a1a1c; box-shadow:0 1px 0 rgba(255,255,255,.12);
+}
+.estop.armed .estop-cover{ transform:rotateX(-108deg); }
 
 /* ---- scrollbars ---- */
 .log-view::-webkit-scrollbar{ width:6px; }

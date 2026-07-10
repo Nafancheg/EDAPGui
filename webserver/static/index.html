@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/mcdu.css?v=5">
+<link rel="stylesheet" href="/static/mcdu.css?v=8">
 </head>
 <body>
 <div class="stage">
@@ -81,13 +81,13 @@
     <!-- function keys -->
     <div class="funckeys">
       <button type="button" class="fk" data-key="DIR">DIR</button>
-      <button type="button" class="fk" data-key="PROG">PROG</button>
+      <button type="button" class="fk" data-key="PROG">PROG<span id="ledProg" class="fk-led"></span></button>
       <button type="button" class="fk" data-key="PERF">PERF</button>
       <button type="button" class="fk" data-key="INIT">INIT</button>
       <button type="button" class="fk" data-key="DATA">DATA</button>
       <button type="button" class="fk" data-key="F-PLN">F-PLN</button>
       <button type="button" class="fk" data-key="RAD NAV">RAD NAV</button>
-      <button type="button" class="fk" data-key="FUEL PRED">FUEL PRED</button>
+      <button type="button" class="fk" data-key="FUEL PRED">FUEL PRED<span id="ledFuel" class="fk-led"></span></button>
       <button type="button" class="fk" data-key="SEC F-PLN">SEC F-PLN</button>
       <button type="button" class="fk" data-key="ATC COMM">ATC COMM</button>
       <button type="button" class="fk" data-key="MCDU MENU">MCDU MENU</button>
@@ -101,6 +101,10 @@
       <button type="button" class="slew" data-slew="u" aria-label="slew up">&#8593;</button>
       <button type="button" class="slew" data-slew="d" aria-label="slew down">&#8595;</button>
       <button type="button" class="slew" data-slew="r" aria-label="slew right">&#8594;</button>
+      <div id="estop" class="estop" title="STOP ALL">
+        <button type="button" id="estopBtn" class="estop-btn" aria-label="STOP ALL">STOP</button>
+        <div id="estopCover" class="estop-cover" role="button" aria-label="lift STOP ALL guard"></div>
+      </div>
     </div>
 
     <!-- RPY curve editor panel (PERF page) -->
@@ -124,6 +128,6 @@
   </div>
 </div>
 <script src="/static/mcdu_curves.js?v=2"></script>
-<script src="/static/mcdu.js?v=7"></script>
+<script src="/static/mcdu.js?v=12"></script>
 </body>
 </html>
