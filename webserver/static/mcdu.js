@@ -60,6 +60,10 @@
 
   // PROG phase model (spec §3.1). Order is the NEXT PHASE> cycle.
   var PHASES = ['DEPART', 'CLIMB', 'CRUISE', 'APPROACH', 'ARRIVAL', 'LND'];
+  // display labels (phase ids stay stable for logic); CLIMB shows as BOOST —
+  // the accelerate-out-to-supercruise leg, not an aviation "climb"
+  var PHASE_LABEL = { CLIMB: 'BOOST' };
+  function phaseLabel(ph) { return PHASE_LABEL[ph] || ph; }
 
   // Which phase is really active, from telemetry. Heuristic v1 (no game yet):
   // docked/undocking -> DEPART, docking flow -> ARRIVAL, fsd assist -> CRUISE,
@@ -454,7 +458,7 @@
   function renderPROG() {
     var ph = viewedPhase();
     var active = detectActivePhase();
-    var ind = (ph === 'ARRIVAL') ? 'ARRIVAL·STN' : ph;  // station branch is the default until target-type telemetry exists
+    var ind = (ph === 'ARRIVAL') ? 'ARRIVAL·STN' : phaseLabel(ph);  // station branch is the default until target-type telemetry exists
     setHeader('PROG', ind, ph !== active);
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
