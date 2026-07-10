@@ -73,7 +73,7 @@
 - [x] 🔵 LED FUEL PRED от бэкенд-enum (клиентские пороги убраны); unknown/OFFLINE → ⚫, статус НЕ critical.
 
 **7.3.3 — F-PLN приведение к контракту (приоритет 3, спека §3.3): ✅ (2026-07-11, инлайн)**
-- [x] 🔵 Список 4 системы/страницу (`ROUTE n/m →`), фикс-строка 5 (L5 `<FAST TRAVEL` [T] `ftToggle`, R5 `DEST · N JMP` [V]), R6 `NEXT PAGE>` (только при pages>1, `nextRoutePage`); per-system info по левому LSK → scratchpad (`NN SYS · класс · SCOOP/NO SCOOP · n.n LY`); правые ячейки — только [V] (actions.R не назначаются).
+- [x] 🔵 Список окном 4 строки; **непрерывная прокрутка вертикальным slew (↑/↓ по строке, ←/→ на окно), без NEXT PAGE** — по авиа-аналогии F-PLN (решение заказчика → замечание 12 спеки). Фикс-строка 5 (L5 `<FAST TRAVEL` [T], R5 `DEST` [V]), внизу сводка `TOTAL N JMP · X.X LY`; per-system info по левому LSK → scratchpad; правые ячейки — только [V].
 - [x] 🔵 Автообновление уже было (открытие через `setPage` + смена location в `handle`); кнопка REFRESH упразднена (осиротевший `refreshRoute` удалён); пустое состояние `NO ACTIVE ROUTE` / `PLOT ROUTE IN GALAXY MAP`, фикс-строка/NEXT PAGE скрыты.
 
 **7.3.4 — Остальные активные страницы (после приоритетных):**

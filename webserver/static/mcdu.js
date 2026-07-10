@@ -707,31 +707,45 @@
     return 'keep';
   }
 
-  // F-PLN · ACTIVE ROUTE, spec §3.3: 4 systems/page (rows 1-4), fixed row 5
-  // (FAST TRAVEL + DEST), R6 NEXT PAGE. Only the left LSK of a list row acts
-  // (per-system info to scratchpad); right cells are display-only.
+  // F-PLN · ACTIVE ROUTE, spec §3.3 + Замечание 12: the whole plan is one
+  // continuous list scrolled with the vertical slew (like a real aircraft
+  // F-PLN — no NEXT PAGE). Rows 1-4 are the scroll window (S.routePage = top
+  // line index); fixed row 5 = FAST TRAVEL + DEST; row 6 = TOTAL jumps · LY.
+  // Only the left LSK of a list row acts (per-system info to scratchpad).
+  var ROUTE_WIN = 4;
+
+  function routeTotalLy(sys) {
+    var t = 0;
+    for (var i = 0; i < sys.length; i++) {
+      var d = Number(sys[i].dist_ly);
+      if (!isNaN(d)) t += d;
+    }
+    return t;
+  }
+
   function renderROUTE() {
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
     var sys = S.route.systems || [];
     if (!S.route.active || sys.length === 0) {
-      setHeader('F-PLN', 'ROUTE 1/1 →');
+      setHeader('F-PLN', 'NO ROUTE');
       fill(2, { lv: 'NO ACTIVE ROUTE', lvs: 's-muted', center: true });
       fill(3, { lv: 'PLOT ROUTE IN GALAXY MAP', lvs: 's-hint', center: true });
       return;
     }
 
-    var pages = routePages();
-    if (S.routePage > pages - 1) S.routePage = pages - 1;
+    var maxScroll = Math.max(0, sys.length - ROUTE_WIN);
+    if (S.routePage > maxScroll) S.routePage = maxScroll;
     if (S.routePage < 0) S.routePage = 0;
-    setHeader('F-PLN', 'ROUTE ' + (S.routePage + 1) + '/' + pages + ' →');
+    var top = S.routePage;
+    var bottom = Math.min(top + ROUTE_WIN, sys.length);
+    setHeader('F-PLN', 'ROUTE ' + (top + 1) + '-' + bottom + '/' + sys.length + ' ↕');
 
-    var start = S.routePage * 4;
     var loc = S.snap.location ? String(S.snap.location).toLowerCase() : null;
 
-    for (var r = 0; r < 4; r++) {
-      var gi = start + r;
+    for (var r = 0; r < ROUTE_WIN; r++) {
+      var gi = top + r;
       if (gi >= sys.length) continue;
       var it = sys[gi];
       var head = pad2(gi + 1) + ' ' + (it.star_class || '?');
@@ -748,25 +762,18 @@
       })(it, gi);
     }
 
-    // fixed row 5: FAST TRAVEL toggle (left) + DEST · total jumps (right)
+    // fixed row 5: FAST TRAVEL toggle (left) + DEST (right)
     fill(4, {
       lv: S.fastTravel ? '<FAST TRAVEL  ON' : '<FAST TRAVEL  OFF', lvs: S.fastTravel ? 's-on' : 's-off',
-      rh: 'DEST',
-      rv: (S.route.destination ? String(S.route.destination) : '---') + ' · ' + (sys.length - 1) + ' JMP',
+      rh: 'DEST', rv: S.route.destination ? String(S.route.destination) : '---',
       rvs: S.route.destination ? 's-normal' : 's-muted'
     });
     actions.L[4] = { press: ftToggle, input: null };
 
-    // R6 NEXT PAGE (only when there is more than one page to cycle)
-    if (pages > 1) {
-      fill(5, { rv: 'NEXT PAGE>', rvs: 's-cyan' });
-      actions.R[5] = { press: nextRoutePage, input: null };
-    }
-  }
-
-  function nextRoutePage() {
-    S.routePage = (S.routePage + 1) % routePages();
-    render();
+    // row 6: whole-plan total — jumps and light-years (display only)
+    fill(5, {
+      rh: 'TOTAL', rv: (sys.length - 1) + ' JMP · ' + routeTotalLy(sys).toFixed(1) + ' LY', rvs: 's-cyan'
+    });
   }
 
   // FUEL PRED main page, spec §3.6. Header indicator mirrors the LED status.
@@ -1083,12 +1090,12 @@
     renderScratch();
   }
 
-  function routePages() {
-    return Math.max(1, Math.ceil((S.route.systems || []).length / 4));
+  function routeMaxScroll() {
+    return Math.max(0, (S.route.systems || []).length - ROUTE_WIN);
   }
   function clampRoutePage() {
-    var p = routePages();
-    if (S.routePage > p - 1) S.routePage = p - 1;
+    var m = routeMaxScroll();
+    if (S.routePage > m) S.routePage = m;
     if (S.routePage < 0) S.routePage = 0;
   }
 
@@ -1109,8 +1116,6 @@
   }
 
   function slew(dir) {
-    // contract: list pages turn on left/right only; up/down are reserved
-    // (down = return to the active phase once the PROG phase page exists)
     if (S.page === 'PROG') {
       var idx = PHASES.indexOf(viewedPhase());
       if (dir === 'l') { S.phase = PHASES[(idx + PHASES.length - 1) % PHASES.length]; render(); }
@@ -1119,8 +1124,13 @@
       return;
     }
     if (S.page === 'ROUTE') {
-      if (dir === 'l') { S.routePage = Math.max(0, S.routePage - 1); render(); }
-      else if (dir === 'r') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }
+      // F-PLN scrolls as one list: up/down by a line, left/right by a window
+      var m = routeMaxScroll();
+      if (dir === 'u') S.routePage = Math.max(0, S.routePage - 1);
+      else if (dir === 'd') S.routePage = Math.min(m, S.routePage + 1);
+      else if (dir === 'l') S.routePage = Math.max(0, S.routePage - ROUTE_WIN);
+      else if (dir === 'r') S.routePage = Math.min(m, S.routePage + ROUTE_WIN);
+      render();
     } else if (S.page === 'PERF') {
       if (dir === 'l') curveSelPrev();
       else if (dir === 'r') curveSelNext();
