@@ -60,12 +60,12 @@
 - [x] 🔵 «Нет данных» единое: все отсутствующие значения `---` `s-muted`; OFFLINE блокирует команды через `ensureConn` → `NOT CONNECTED`; LED гаснут без связи.
 - [x] 🔵 Slew-каркас: списки листаются только ←/→ (↑/↓ зарезервированы: ↓ = возврат к активной фазе — активируется с PROG в 7.3.1; R6 NEXT PAGE на списке F-PLN — в 7.3.3 вместе с форматом 4/страницу).
 
-**7.3.1 — PROG · фазовая страница (приоритет 1, спека §3.1):**
-- [ ] 🟣 Каркас фаз DEPART↔CLIMB↔CRUISE↔APPROACH↔ARRIVAL↔LND: раскладки слотов по таблицам §3.1; boot default = PROG; порядок реализации фаз: CRUISE → APPROACH → DEPART/CLIMB → ARRIVAL (LND — каркас с [план]-разметкой).
-- [ ] 🔵 Автоподсветка активной фазы по `ship_status`/`ap_mode` (ручное листание не запрещено; просматриваемая ≠ активная — приглушённый индикатор в шапке).
-- [ ] 🔵 ARRIVAL-ветка: индикатор `ARRIVAL·STN`/`ARRIVAL·PLT`, R6 NEXT PHASE → DEPART (станция, петля плеча) или LND (планета).
-- [ ] 🔵 INIT/DIR перестают открывать старый перегруженный экран: INIT → упрощённый PREFLIGHT §3.2, DIR → [план]-страница DIRECT-TO §3.5; декомпозиция элементов старого экрана — по таблице «План декомпозиции» спеки.
-- [ ] 🔵 Бэкенд-пробелы (замечания 3, 10 спеки): команда enter-SC для CLIMB L1 (в транспорте нет — добавить или замапить); SCOOP NOW (CRUISE L5) → маппинг на существующий скуп on-demand.
+**7.3.1 — PROG · фазовая страница (приоритет 1, спека §3.1): ✅ (2026-07-10)**
+- [x] 🟣 Каркас фаз DEPART↔CLIMB↔CRUISE↔APPROACH↔ARRIVAL↔LND по §3.1; boot default = PROG; LND — каркас с [план]-разметкой (валидация координат R5 работает, действия → `NOT AVAILABLE`).
+- [x] 🔵 Автоподсветка активной фазы: эвристика v1 по `ship_status`/`ap_mode` (`detectActivePhase`); просматриваемая ≠ активная — muted-индикатор; slew ↓ возвращает к активной.
+- [x] 🔵 ARRIVAL-ветка: индикатор `ARRIVAL·STN` (по умолчанию; `·PLT`-детект требует телеметрии типа цели — доделать при появлении данных), NEXT PHASE замыкает петлю через DEPART, LND доступна slew.
+- [x] 🔵 INIT → PREFLIGHT §3.2 (входы в разделы + сводка DEST/JUMPS/SHIP/FUEL/LINK, R6 `PROG>`), DIR → DIRECT-TO §3.5 [план]; старый перегруженный экран удалён (FAST TRAVEL вернётся на F-PLN в 7.3.3, `ftToggle` сохранён).
+- [x] 🔵 Бэкенд-пробелы закрыты: `ED_AP.request_action()` — очередь one-shot действий в engine-loop (undock/request_docking/dock/**enter_sc**→`sc_engage`/honk/**scoop**→`refuel_new`/fss_scan/align_target), WS-команда `action.request`, зеркало в demo FakeAP.
 
 **7.3.2 — FUEL PRED + LED (приоритет 2, спека §3.6):**
 - [ ] 🔵 Бэкенд-расчёты из журнала (лёгкая версия ДО Фазы 3, без сенсор-фьюжна): avg fuel/jump (накопление `FuelUsed` из FSDJump), jumps-until-refuel, range forecast, fuel status enum NORMAL/WARNING/CRITICAL (порог + прыжки до заправки).

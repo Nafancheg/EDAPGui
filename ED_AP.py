@@ -254,6 +254,10 @@ class EDAutopilot:
         self.cv_view_x = 10
         self.cv_view_y = 10
 
+        # one-shot action requests from the web UI; executed on the engine
+        # loop thread (they drive OCR/keys), never on the caller's thread
+        self.pending_actions = []
+
         # start the engine thread
         self.terminate = False  # terminate used by the thread to exit its loop
         if do_thread:
@@ -1164,6 +1168,27 @@ class EDAutopilot:
                 self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.sc_assist_enabled = enable
 
+    def request_action(self, name: str) -> bool:
+        """Queue a one-shot flight action for the engine loop. Returns False
+        for unknown action names. Thread-safe (GIL-atomic list append)."""
+        if name not in self._action_registry():
+            return False
+        self.pending_actions.append(name)
+        return True
+
+    def _action_registry(self):
+        """Web-requestable one-shot actions -> the core calls they run."""
+        return {
+            'undock': lambda: self.docking_service.undock_seq(),
+            'request_docking': lambda: self.docking_service.request_docking(),
+            'dock': lambda: self.docking_service.dock(),
+            'enter_sc': lambda: self.docking_service.sc_engage(False),
+            'honk': lambda: self.jump_service.honk(),
+            'scoop': lambda: self.fuel_service.refuel_new(self.scrReg),
+            'fss_scan': lambda: self.elw_advisor.fss_detect_elw(self.scrReg),
+            'align_target': lambda: self.nav_service.sc_target_align(self.scrReg),
+        }
+
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
         self.config['Enable_CV_View'] = int(self.cv_view)  # update the config
@@ -1310,6 +1335,19 @@ class EDAutopilot:
                 self.sc_assist_enabled = False
                 self.ap_ckb('sc_stop')
                 self.update_overlay()
+
+            # One-shot actions queued from the web UI (PROG phase buttons).
+            while self.pending_actions and not self.terminate:
+                action = self.pending_actions.pop(0)
+                try:
+                    self.ap_ckb('log', f"Action: {action}")
+                    self._action_registry()[action]()
+                except EDAP_Interrupt:
+                    logger.debug(f"Action {action} interrupted")
+                    self.keys.release_all_keys()
+                except Exception as e:
+                    logger.debug(f"Action {action} failed: {e}")
+                    self.ap_ckb('log', f"Action {action} failed: {e}")
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
             if self.gui_loaded:

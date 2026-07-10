@@ -207,6 +207,12 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
     elif name == "assist.stop_all":
         ed_ap.set_fsd_assist(False)
         ed_ap.set_sc_assist(False)
+    elif name == "action.request":
+        action = cmd.get("action")
+        if isinstance(action, str) and ed_ap.request_action(action):
+            await ws.send_str(json.dumps({"type": "action_queued", "action": action}))
+        else:
+            await ws.send_str(json.dumps({"type": "error", "text": f"unknown action: {action!r}"}))
     elif name == "throttle.set":
         level = cmd.get("level")
         if level == 0:

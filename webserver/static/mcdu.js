@@ -32,7 +32,8 @@
 
   // ---- state ----
   var S = {
-    page: 'INIT',
+    page: 'PROG',
+    phase: null,             // viewed PROG phase; null = follow the active one
     snap: {},
     cfg: {},
     route: { active: false, destination: null, systems: [] },
@@ -56,6 +57,25 @@
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
   var actions = { L: [null, null, null, null, null, null], R: [null, null, null, null, null, null] };
+
+  // PROG phase model (spec §3.1). Order is the NEXT PHASE> cycle.
+  var PHASES = ['DEPART', 'CLIMB', 'CRUISE', 'APPROACH', 'ARRIVAL', 'LND'];
+
+  // Which phase is really active, from telemetry. Heuristic v1 (no game yet):
+  // docked/undocking -> DEPART, docking flow -> ARRIVAL, fsd assist -> CRUISE,
+  // sc assist -> APPROACH, plain supercruise -> CRUISE, normal space -> CLIMB.
+  function detectActivePhase() {
+    var st = String(S.snap.ship_status || '');
+    var mode = S.snap.ap_mode;
+    if (st === 'in_station' || st === 'starting_undocking' || st === 'in_undocking') return 'DEPART';
+    if (st === 'dockinggranted' || st === 'dockingdenied' || st === 'starting_docking' || st === 'in_docking') return 'ARRIVAL';
+    if (mode === 'fsd') return 'CRUISE';
+    if (mode === 'sc') return 'APPROACH';
+    if (st === 'in_supercruise') return 'CRUISE';
+    if (st === 'in_space') return 'CLIMB';
+    return 'CRUISE';
+  }
+  function viewedPhase() { return S.phase || detectActivePhase(); }
 
   // ---- WebSocket ----
   var ws = null;
@@ -354,6 +374,22 @@
     render();
   }
 
+  function sendAction(name) {
+    if (!ensureConn()) return;
+    sendRaw({ cmd: 'action.request', action: name });
+  }
+  function elwToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.ElwScannerEnable;
+    if (sendRaw({ cmd: 'config.set', key: 'ElwScannerEnable', value: nv })) S.cfg.ElwScannerEnable = nv;
+    render();
+  }
+  function throttlePreset(lvl) {
+    if (!ensureConn()) return;
+    if (sendRaw({ cmd: 'throttle.set', level: lvl })) S.throttle = lvl;
+    render();
+  }
+
   function throttlePress() {
     if (!ensureConn()) return;
     var order = [0, 50, 100];
@@ -415,57 +451,250 @@
   }
 
   // ---- pages ----
-  function renderINIT() {
-    setHeader('EDAUTOPILOT', 'INIT');
+  function renderPROG() {
+    var ph = viewedPhase();
+    var active = detectActivePhase();
+    var ind = (ph === 'ARRIVAL') ? 'ARRIVAL·STN' : ph;  // station branch is the default until target-type telemetry exists
+    setHeader('PROG', ind, ph !== active);
     clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+    if (ph === 'CRUISE') renderPhaseCRUISE();
+    else if (ph === 'APPROACH') renderPhaseAPPROACH();
+    else if (ph === 'DEPART') renderPhaseDEPART();
+    else if (ph === 'CLIMB') renderPhaseCLIMB();
+    else if (ph === 'ARRIVAL') renderPhaseARRIVAL();
+    else renderPhaseLND();
+    // R6 NEXT PHASE> is common to every phase
+    fill(5, { rv: 'NEXT PHASE>', rvs: 's-cyan' });
+    actions.R[5] = { press: nextPhase, input: null };
+  }
 
+  function nextPhase() {
+    var order = PHASES;
+    var idx = order.indexOf(viewedPhase());
+    S.phase = order[(idx + 1) % order.length];
+    render();
+  }
+
+  function renderPhaseDEPART() {
     var snap = S.snap;
-    var fsdOn = isOn('fsd'), scOn = isOn('sc');
     var thr = (S.throttle === null) ? '---' : S.throttle + '%';
 
     fill(0, {
-      lh: 'FSD ROUTE', lv: fsdOn ? '<ON' : '<OFF', lvs: fsdOn ? 's-on' : 's-off',
+      lv: '<UNDOCK', lvs: 's-normal',
       rh: 'THROTTLE', rv: thr, rvs: (S.throttle === null) ? 's-muted' : 's-cyan'
     });
-    actions.L[0] = { press: fsdToggle, input: function () { return false; } };
-    actions.R[0] = { press: throttlePress, input: throttleInput };
+    actions.L[0] = { press: function () { sendAction('undock'); }, input: null };
+    actions.R[0] = { press: null, input: throttleInput };
 
-    var f = fuelCell(snap.fuel_percent);
     fill(1, {
-      lh: 'SUPERCRUISE', lv: scOn ? '<ON' : '<OFF', lvs: scOn ? 's-on' : 's-off',
-      rh: 'FUEL', rv: f.t, rvs: f.s
-    });
-    actions.L[1] = { press: scToggle, input: function () { return false; } };
-
-    fill(2, {
-      lh: 'FAST TRAVEL', lv: S.fastTravel ? '<ON' : '<OFF', lvs: S.fastTravel ? 's-on' : 's-off',
       rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: snap.ship_status ? 's-normal' : 's-muted'
     });
-    actions.L[2] = { press: ftToggle, input: function () { return false; } };
 
-    var starVal = '', starHead = '', starState = 's-normal';
-    if (snap.star_class) {
-      starHead = 'STAR';
-      starVal = snap.star_class + ' ' + (snap.scoopable ? 'SCOOP' : '✗');
-      starState = snap.scoopable ? 's-on' : 's-alert';
-    }
-    fill(3, {
-      lh: 'SYSTEM', lv: snap.location ? String(snap.location) : '---', lvs: snap.location ? 's-normal' : 's-muted',
-      rh: starHead, rv: starVal, rvs: starState
+    fill(2, {
+      lv: '<THR 0', lvs: 's-normal',
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
     });
+    actions.L[2] = { press: function () { throttlePreset(0); }, input: null };
+
+    fill(3, {
+      lv: '<THR 50', lvs: 's-normal',
+      rh: 'ROUTE',
+      rv: S.route.active ? S.route.destination + ' · ' + (S.route.systems.length - 1) + ' JMP' : '---',
+      rvs: S.route.active ? 's-normal' : 's-muted'
+    });
+    actions.L[3] = { press: function () { throttlePreset(50); }, input: null };
+
+    fill(4, { lv: '<THR 100', lvs: 's-normal' });
+    actions.L[4] = { press: function () { throttlePreset(100); }, input: null };
+  }
+
+  function renderPhaseCLIMB() {
+    var snap = S.snap;
+    var thr = (S.throttle === null) ? '---' : S.throttle + '%';
+
+    fill(0, {
+      lv: '<ENTER SC', lvs: 's-normal',
+      rh: 'THROTTLE', rv: thr, rvs: (S.throttle === null) ? 's-muted' : 's-cyan'
+    });
+    actions.L[0] = { press: function () { sendAction('enter_sc'); }, input: null };
+    actions.R[0] = { press: null, input: throttleInput };
+
+    fill(1, {
+      lv: '<ALIGN TGT', lvs: 's-normal',
+      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: snap.ship_status ? 's-normal' : 's-muted'
+    });
+    actions.L[1] = { press: function () { sendAction('align_target'); }, input: null };
+
+    fill(2, {
+      lv: '<THR 0', lvs: 's-normal',
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
+    });
+    actions.L[2] = { press: function () { throttlePreset(0); }, input: null };
+
+    fill(3, { lv: '<THR 50', lvs: 's-normal' });
+    actions.L[3] = { press: function () { throttlePreset(50); }, input: null };
+
+    fill(4, { lv: '<THR 100', lvs: 's-normal' });
+    actions.L[4] = { press: function () { throttlePreset(100); }, input: null };
+  }
+
+  function renderPhaseARRIVAL() {
+    var snap = S.snap;
+
+    fill(0, { lv: '<REQ DOCKING', lvs: 's-normal' });
+    actions.L[0] = { press: function () { sendAction('request_docking'); }, input: null };
+
+    fill(1, {
+      lv: '<DOCK / LAND', lvs: 's-normal',
+      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: snap.ship_status ? 's-normal' : 's-muted'
+    });
+    actions.L[1] = { press: function () { sendAction('dock'); }, input: null };
+
+    fill(2, {
+      lv: '<REFUEL·REPAIR', lvs: 's-muted',
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
+    });
+    actions.L[2] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+  }
+
+  function renderPhaseLND() {
+    fill(0, { lv: '<DROP TO OC', lvs: 's-muted', rh: 'ALT', rv: '---', rvs: 's-muted' });
+    fill(1, { lv: '<GLIDE', lvs: 's-muted', rh: 'POS', rv: '---', rvs: 's-muted' });
+    fill(2, { lv: '<SURFACE APPR', lvs: 's-muted', rh: 'HDG · BRG', rv: '---', rvs: 's-muted' });
+    fill(3, { lv: '<TGT: POI', lvs: 's-muted', rh: 'DIST TO TGT', rv: '---', rvs: 's-muted' });
+    fill(4, { lv: '<FINAL DESCENT', lvs: 's-muted', rh: 'TGT COORDS', rv: '----/----', rvs: 's-cyan' });
+    for (var i = 0; i < 5; i++) {
+      actions.L[i] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    }
+    actions.R[4] = { press: null, input: lndCoordsInput };
+  }
+
+  // LND R5: lat/lon entry per spec §3.1 — two decimals separated by '/',
+  // sign and fraction optional, lat in [-90,90], lon in [-180,180]
+  function lndCoordsInput(v) {
+    var m = /^([+-]?\d+(?:\.\d+)?)\/([+-]?\d+(?:\.\d+)?)$/.exec(v.trim());
+    if (!m) return false;
+    var lat = parseFloat(m[1]), lon = parseFloat(m[2]);
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+    flash('NOT AVAILABLE', 1500);   // valid entry; guidance backend arrives in Phase 8.2
+    return 'keep';
+  }
+
+  function renderPhaseCRUISE() {
+    var snap = S.snap;
+    var fsdOn = isOn('fsd');
 
     var noJumps = (snap.jump_cnt === null || snap.jump_cnt === undefined)
       && (snap.total_jumps === null || snap.total_jumps === undefined);
     var jc = (snap.jump_cnt === null || snap.jump_cnt === undefined) ? '-' : snap.jump_cnt;
     var tj = (snap.total_jumps === null || snap.total_jumps === undefined) ? '-' : snap.total_jumps;
-    fill(4, {
-      lh: 'JUMPS', lv: noJumps ? '---' : jc + '/' + tj, lvs: noJumps ? 's-muted' : 's-normal',
+    fill(0, {
+      lv: fsdOn ? '<FSD ROUTE ON' : '<FSD ROUTE OFF', lvs: fsdOn ? 's-on' : 's-off',
+      rh: 'JUMPS', rv: noJumps ? '---' : jc + '/' + tj, rvs: noJumps ? 's-muted' : 's-normal'
+    });
+    actions.L[0] = { press: fsdToggle, input: null };
+
+    fill(1, {
+      lv: '<FSS SCAN', lvs: 's-normal',
       rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted'
     });
+    actions.L[1] = { press: function () { sendAction('fss_scan'); }, input: null };
 
-    fill(5, {
-      lh: 'TARGET', lv: snap.target ? String(snap.target) : '---', lvs: snap.target ? 's-normal' : 's-muted'
+    fill(2, {
+      lv: '<HONK', lvs: 's-normal',
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
     });
+    actions.L[2] = { press: function () { sendAction('honk'); }, input: null };
+
+    var elwOn = !!S.cfg.ElwScannerEnable;
+    var hasDist = snap.total_dist_jumped !== null && snap.total_dist_jumped !== undefined;
+    var distVal = hasDist
+      ? Number(snap.total_dist_jumped).toFixed(1) + ' LY · ' + (snap.jumps_remaining ?? '-') + ' LEFT'
+      : '---';
+    fill(3, {
+      lv: elwOn ? '<ELW SCAN ON' : '<ELW SCAN OFF', lvs: elwOn ? 's-on' : 's-off',
+      rh: 'DIST', rv: distVal, rvs: hasDist ? 's-normal' : 's-muted'
+    });
+    actions.L[3] = { press: elwToggle, input: null };
+
+    var f = fuelCell(snap.fuel_percent);
+    var scoopSuffix = snap.star_class ? (snap.scoopable ? ' · SCOOP' : ' · ✗') : '';
+    fill(4, {
+      lv: '<SCOOP NOW', lvs: 's-normal',
+      rh: 'FUEL', rv: f.t + scoopSuffix, rvs: f.s
+    });
+    actions.L[4] = { press: function () { sendAction('scoop'); }, input: null };
+  }
+
+  function renderPhaseAPPROACH() {
+    var snap = S.snap;
+    var scOn = isOn('sc');
+
+    fill(0, {
+      lv: scOn ? '<SC ASSIST ON' : '<SC ASSIST OFF', lvs: scOn ? 's-on' : 's-off',
+      rh: 'DIST TO DROP', rv: '---', rvs: 's-muted'
+    });
+    actions.L[0] = { press: scToggle, input: null };
+
+    fill(1, {
+      lv: '<ALIGN TGT', lvs: 's-normal',
+      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---', rvs: snap.ship_status ? 's-normal' : 's-muted'
+    });
+    actions.L[1] = { press: function () { sendAction('align_target'); }, input: null };
+
+    fill(2, {
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
+    });
+  }
+
+  function renderINIT() {
+    setHeader('INIT', 'PREFLIGHT');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+    var snap = S.snap;
+    var f = fuelCell(snap.fuel_percent);
+    fill(0, { lv: '<F-PLN', lvs: 's-normal',
+      rh: 'DEST', rv: S.route.active ? String(S.route.destination) : '---',
+      rvs: S.route.active ? 's-normal' : 's-muted' });
+    actions.L[0] = { press: function () { setPage('ROUTE'); }, input: null };
+    fill(1, { lv: '<FUEL PRED', lvs: 's-normal',
+      rh: 'JUMPS', rv: S.route.active ? String(S.route.systems.length - 1) : '---',
+      rvs: S.route.active ? 's-normal' : 's-muted' });
+    actions.L[1] = { press: function () { setPage('FUEL'); }, input: null };
+    fill(2, { lv: '<PERF', lvs: 's-normal',
+      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---',
+      rvs: snap.ship_status ? 's-normal' : 's-muted' });
+    actions.L[2] = { press: function () { setPage('PERF'); }, input: null };
+    fill(3, { lv: '<DATA', lvs: 's-muted', rh: 'FUEL', rv: f.t, rvs: f.s });
+    actions.L[3] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
+    fill(4, { lv: '<SETTINGS', lvs: 's-muted',
+      rh: 'LINK', rv: S.connected ? 'CONNECTED' : 'OFFLINE',
+      rvs: S.connected ? 's-on' : 's-alert' });
+    actions.L[4] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
+    fill(5, { rv: 'PROG>', rvs: 's-cyan' });
+    actions.R[5] = { press: function () { setPage('PROG'); }, input: null };
+  }
+
+  function renderDIR() {
+    setHeader('DIR', 'DIRECT-TO');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+    fill(0, { lv: '<NEAREST SCOOPABLE', lvs: 's-muted',
+      rh: 'DIRECT TO', rv: '________', rvs: 's-cyan' });
+    actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    actions.R[0] = { press: null, input: dirTargetInput };
+    fill(1, { lv: '<NEAREST SYSTEM', lvs: 's-muted',
+      rh: 'CAND', rv: '---', rvs: 's-muted' });
+    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    fill(3, { lv: 'DIRECT-TO PLOTTER', lvs: 's-muted', center: true });
+    fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint', center: true });
+  }
+
+  function dirTargetInput(v) {
+    if (!v.trim()) return false;
+    flash('NOT AVAILABLE', 1500);   // plotter backend arrives in Phase 8.1
+    return 'keep';
   }
 
   function renderROUTE() {
@@ -714,7 +943,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'INIT', 'INIT': 'INIT', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -764,9 +993,11 @@
     renderSub();
     renderLeds();
 
-    if (S.page === 'ROUTE') renderROUTE();
+    if (S.page === 'PROG') renderPROG();
+    else if (S.page === 'ROUTE') renderROUTE();
     else if (S.page === 'FUEL') renderFUEL();
     else if (S.page === 'PERF') renderPERF();
+    else if (S.page === 'DIR') renderDIR();
     else renderINIT();
 
     // show/hide curve panel
@@ -775,8 +1006,7 @@
     // highlight active function key
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
-      // DIR is a shortcut, not a page of its own -- never shown as active
-      b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === S.page && key !== 'DIR');
+      b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === S.page);
     });
 
     renderScratch();
@@ -796,7 +1026,7 @@
     if (S.page === p) return;
     if (S.page === 'PERF') hideCurvePanel();
     S.page = p;
-    if (p === 'ROUTE') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
+    if (p === 'ROUTE' || p === 'INIT') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
     if (p === 'PERF') S.curveNeedsLoad = true;
     render();
   }
@@ -810,6 +1040,13 @@
   function slew(dir) {
     // contract: list pages turn on left/right only; up/down are reserved
     // (down = return to the active phase once the PROG phase page exists)
+    if (S.page === 'PROG') {
+      var idx = PHASES.indexOf(viewedPhase());
+      if (dir === 'l') { S.phase = PHASES[(idx + PHASES.length - 1) % PHASES.length]; render(); }
+      else if (dir === 'r') { S.phase = PHASES[(idx + 1) % PHASES.length]; render(); }
+      else if (dir === 'd') { S.phase = null; render(); }  // return to the active phase
+      return;
+    }
     if (S.page === 'ROUTE') {
       if (dir === 'l') { S.routePage = Math.max(0, S.routePage - 1); render(); }
       else if (dir === 'r') { S.routePage = Math.min(routePages() - 1, S.routePage + 1); render(); }

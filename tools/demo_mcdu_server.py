@@ -104,6 +104,14 @@ class FakeAP:
         self.sc = v
         self.ap_ckb("log", f"SC assist -> {v}")
 
+    def request_action(self, name):
+        known = ('undock', 'request_docking', 'dock', 'enter_sc', 'honk',
+                 'scoop', 'fss_scan', 'align_target')
+        if name not in known:
+            return False
+        self.ap_ckb("log", f"(demo) action: {name}")
+        return True
+
     def set_throttle_0(self):
         self.speed_demand = "SCSpeed0"
         self.ap_ckb("log", "Throttle set to 0%")
