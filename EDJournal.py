@@ -240,6 +240,7 @@ class EDJournal:
             'fuel_capacity': None,
             'fuel_level': None,
             'fuel_percent': None,
+            'fuel_used_hist': [],   # FuelUsed of the last FSD jumps (fuel prediction)
             'is_scooping': False,
             'cur_star_system': "",
             'cur_station': "",
@@ -491,6 +492,9 @@ class EDJournal:
                 self.ship['is_scooping'] = False
 
             if log_event == 'FSDJump':
+                if 'FuelUsed' in log:
+                    self.ship['fuel_used_hist'].append(log['FuelUsed'])
+                    del self.ship['fuel_used_hist'][:-10]   # keep the last 10 jumps
                 self.ship['location'] = log['StarSystem']
                 self.ship['cur_star_system'] = log['StarSystem']
                 # New system - clear the exploration scan state

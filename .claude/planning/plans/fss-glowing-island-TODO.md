@@ -67,10 +67,10 @@
 - [x] 🔵 INIT → PREFLIGHT §3.2 (входы в разделы + сводка DEST/JUMPS/SHIP/FUEL/LINK, R6 `PROG>`), DIR → DIRECT-TO §3.5 [план]; старый перегруженный экран удалён (FAST TRAVEL вернётся на F-PLN в 7.3.3, `ftToggle` сохранён).
 - [x] 🔵 Бэкенд-пробелы закрыты: `ED_AP.request_action()` — очередь one-shot действий в engine-loop (undock/request_docking/dock/**enter_sc**→`sc_engage`/honk/**scoop**→`refuel_new`/fss_scan/align_target), WS-команда `action.request`, зеркало в demo FakeAP.
 
-**7.3.2 — FUEL PRED + LED (приоритет 2, спека §3.6):**
-- [ ] 🔵 Бэкенд-расчёты из журнала (лёгкая версия ДО Фазы 3, без сенсор-фьюжна): avg fuel/jump (накопление `FuelUsed` из FSDJump), jumps-until-refuel, range forecast, fuel status enum NORMAL/WARNING/CRITICAL (порог + прыжки до заправки).
-- [ ] 🔵 Страница FUEL PRED по §3.6: R1 %+тонны, R2 TO REFUEL (ключевой), R3 AVG/JUMP, R4 RANGE, R5 порог [E]; L1 ACTIVATE REFUEL → подстраница REFUEL SELECT (STAR THIS SYSTEM работает уже сейчас; станции/точки — [план]).
-- [ ] 🔵 LED клавиши FUEL PRED от fuel status; нет данных → `---`, LED ⚫, статус НЕ CRITICAL.
+**7.3.2 — FUEL PRED + LED (приоритет 2, спека §3.6): ✅ (2026-07-10, инлайн без субагентов)**
+- [x] 🔵 Бэкенд: `EDJournal` копит `FuelUsed` последних 10 FSDJump (`fuel_used_hist`); `get_status_dict` отдаёт `fuel_level/capacity`, `avg_fuel_per_jump`, `jumps_to_refuel` (от `RefuelThreshold`), `range_jumps`, `fuel_status` normal/warning/critical/unknown. Зеркало в demo FakeAP.
+- [x] 🔵 Страница §3.6: R1 `%·тонны`, R2 TO REFUEL, R3 AVG/JUMP, R4 RANGE, R5 порог [E] (0–100 → `INVALID`, пишет `config.set RefuelThreshold`); L1 → подстраница REFUEL SELECT (STAR THIS SYSTEM → `action scoop`, станции/точки [план] `NOT AVAILABLE`, L6 RETURN); индикатор шапки = статус.
+- [x] 🔵 LED FUEL PRED от бэкенд-enum (клиентские пороги убраны); unknown/OFFLINE → ⚫, статус НЕ critical.
 
 **7.3.3 — F-PLN приведение к контракту (приоритет 3, спека §3.3):**
 - [ ] 🔵 Список 4 системы/страницу (`ROUTE n/m →`), фикс-строка 5 (L5 FAST TRAVEL, R5 DEST+jumps), R6 NEXT PAGE; per-system info по левому LSK → сообщение в scratchpad; правые ячейки списка — только [V].

@@ -749,25 +749,78 @@
     }
   }
 
+  // FUEL PRED main page, spec §3.6. Header indicator mirrors the LED status.
   function renderFUEL() {
-    setHeader('FUEL PRED', 'FUEL');
+    var snap = S.snap;
+    var st = snap.fuel_status;
+    setHeader('FUEL PRED', st && st !== 'unknown' ? st.toUpperCase() : 'FUEL',
+              !st || st === 'unknown');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
-    var snap = S.snap;
     var f = fuelCell(snap.fuel_percent);
-    fill(0, { lh: 'FUEL ONBOARD', lv: f.t, lvs: f.s });
+    var tons = (snap.fuel_level !== null && snap.fuel_level !== undefined && snap.fuel_capacity)
+      ? ' · ' + snap.fuel_level + '/' + snap.fuel_capacity + ' T' : '';
+    fill(0, { lv: '<ACTIVATE REFUEL', lvs: 's-normal',
+      rh: 'FUEL', rv: f.t + tons, rvs: f.s });
+    actions.L[0] = { press: function () { setPage('FUEL_SEL'); }, input: null };
 
-    if (snap.star_class) {
-      fill(1, {
-        lh: 'CURRENT STAR', lv: String(snap.star_class), lvs: 's-normal',
-        rv: snap.scoopable ? 'SCOOP' : '✗', rvs: snap.scoopable ? 's-on' : 's-alert'
-      });
-    } else {
-      fill(1, { lh: 'CURRENT STAR', lv: '---', lvs: 's-muted' });
+    var tr = snap.jumps_to_refuel;
+    fill(1, { rh: 'TO REFUEL',
+      rv: (tr === null || tr === undefined) ? '---' : tr + ' JMP',
+      rvs: (tr === null || tr === undefined) ? 's-muted' : (tr <= 2 ? 's-warn' : 's-normal') });
+
+    var avg = snap.avg_fuel_per_jump;
+    fill(2, { rh: 'AVG/JUMP',
+      rv: avg ? avg + ' T' : '---', rvs: avg ? 's-normal' : 's-muted' });
+
+    var rng = snap.range_jumps;
+    fill(3, { rh: 'RANGE',
+      rv: (rng === null || rng === undefined) ? '---' : rng + ' JMP',
+      rvs: (rng === null || rng === undefined) ? 's-muted' : 's-normal' });
+
+    var thr = S.cfg.RefuelThreshold;
+    fill(4, { rh: 'RFL THRESHOLD',
+      rv: (thr === null || thr === undefined) ? '---' : thr + '%',
+      rvs: (thr === null || thr === undefined) ? 's-muted' : 's-cyan' });
+    actions.R[4] = { press: null, input: thresholdInput };
+  }
+
+  function thresholdInput(v) {
+    var n = v.trim();
+    if (!/^\d{1,3}$/.test(n)) return false;
+    var val = parseInt(n, 10);
+    if (val < 0 || val > 100) return false;
+    if (!ensureConn()) return 'keep';
+    if (sendRaw({ cmd: 'config.set', key: 'RefuelThreshold', value: val })) {
+      S.cfg.RefuelThreshold = val;
+      render();
+      return true;
     }
+    return 'keep';
+  }
 
-    fill(5, { lv: 'FUEL PREDICTION AWAITS FUELSTATE (PHASE 3)', lvs: 's-msg', center: true });
+  // REFUEL SELECT sub-page (level 2, from FUEL PRED L1), spec §3.6
+  function renderFUELSEL() {
+    var snap = S.snap;
+    setHeader('REFUEL SELECT', 'FUEL');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var starVal = snap.star_class
+      ? snap.star_class + (snap.scoopable ? ' SCOOP' : ' ✗') : '---';
+    fill(0, { lv: '<STAR THIS SYSTEM', lvs: 's-normal',
+      rh: 'STAR', rv: starVal,
+      rvs: !snap.star_class ? 's-muted' : (snap.scoopable ? 's-on' : 's-alert') });
+    actions.L[0] = { press: function () { sendAction('scoop'); }, input: null };
+
+    fill(1, { lv: '<NEAREST STATION', lvs: 's-muted', rh: 'STN', rv: '---', rvs: 's-muted' });
+    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    fill(2, { lv: '<NEAREST RFL POINT', lvs: 's-muted', rh: 'PT', rv: '---', rvs: 's-muted' });
+    actions.L[2] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('FUEL'); }, input: null };
   }
 
   function renderPERF() {
@@ -977,13 +1030,9 @@
   function renderLeds() {
     var engaged = isOn('fsd') || isOn('sc');
     ledProg.className = 'fk-led' + (engaged ? ' led-g' : '');
-    var cls = '';
-    if (S.connected) {
-      var n = Number(S.snap.fuel_percent);
-      if (S.snap.fuel_percent !== null && S.snap.fuel_percent !== undefined && !isNaN(n)) {
-        cls = n < 10 ? ' led-r' : (n < 25 ? ' led-y' : ' led-g');
-      }
-    }
+    // FUEL PRED LED follows the backend fuel_status enum; unknown/offline = dark
+    var map = { normal: ' led-g', warning: ' led-y', critical: ' led-r' };
+    var cls = S.connected ? (map[S.snap.fuel_status] || '') : '';
     ledFuel.className = 'fk-led' + cls;
   }
 
@@ -996,6 +1045,7 @@
     if (S.page === 'PROG') renderPROG();
     else if (S.page === 'ROUTE') renderROUTE();
     else if (S.page === 'FUEL') renderFUEL();
+    else if (S.page === 'FUEL_SEL') renderFUELSEL();
     else if (S.page === 'PERF') renderPERF();
     else if (S.page === 'DIR') renderDIR();
     else renderINIT();
@@ -1003,10 +1053,11 @@
     // show/hide curve panel
     if (S.page !== 'PERF') hideCurvePanel();
 
-    // highlight active function key
+    // highlight active function key (sub-pages light their parent key)
+    var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : S.page;
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
-      b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === S.page);
+      b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === pageKey);
     });
 
     renderScratch();

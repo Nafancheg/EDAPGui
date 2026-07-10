@@ -75,11 +75,25 @@ class FakeAP:
             mode = "sc"
         else:
             mode = "offline"
+        cap = 32.0
+        level = round(self._fuel / 100.0 * cap, 1)
+        avg = 1.7
+        thr = self.config["RefuelThreshold"] / 100.0 * cap
+        to_refuel = max(0, int((level - thr) / avg))
+        status = ("critical" if self._fuel < 10 or to_refuel == 0
+                  else "warning" if self._fuel < 25 or to_refuel <= 2
+                  else "normal")
         return {
             "ap_mode": mode,
             "ap_state": "Waiting" if mode == "offline" else "Aligning",
             "ship_status": "in_space",
             "fuel_percent": self._fuel,
+            "fuel_level": level,
+            "fuel_capacity": cap,
+            "avg_fuel_per_jump": avg,
+            "jumps_to_refuel": to_refuel,
+            "range_jumps": int(level / avg),
+            "fuel_status": status,
             "location": "Devataru",
             "star_class": "M",
             "scoopable": False,

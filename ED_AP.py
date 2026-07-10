@@ -649,11 +649,40 @@ class EDAutopilot:
         ship = self.jn.ship_state()
         star_class = ship['star_class']
 
+        # Fuel prediction (light journal-only version until Phase 3 FuelState):
+        # average burn over the last jumps -> jumps until the refuel threshold
+        # and total range, plus a normal/warning/critical/unknown status enum.
+        fuel_level = ship['fuel_level']
+        fuel_capacity = ship['fuel_capacity']
+        hist = ship.get('fuel_used_hist') or []
+        avg_fuel = round(sum(hist) / len(hist), 2) if hist else None
+        jumps_to_refuel = None
+        range_jumps = None
+        if avg_fuel and fuel_level is not None and fuel_capacity:
+            threshold_tons = self.config['RefuelThreshold'] / 100.0 * fuel_capacity
+            jumps_to_refuel = max(0, int((fuel_level - threshold_tons) / avg_fuel))
+            range_jumps = max(0, int(fuel_level / avg_fuel))
+        fuel_percent = ship['fuel_percent']
+        if fuel_percent is None:
+            fuel_status = "unknown"
+        elif fuel_percent < 10 or jumps_to_refuel == 0:
+            fuel_status = "critical"
+        elif fuel_percent < 25 or (jumps_to_refuel is not None and jumps_to_refuel <= 2):
+            fuel_status = "warning"
+        else:
+            fuel_status = "normal"
+
         return {
             "ap_mode": ap_mode,
             "ap_state": self.ap_state,
             "ship_status": ship['status'],
-            "fuel_percent": ship['fuel_percent'],
+            "fuel_percent": fuel_percent,
+            "fuel_level": fuel_level,
+            "fuel_capacity": fuel_capacity,
+            "avg_fuel_per_jump": avg_fuel,
+            "jumps_to_refuel": jumps_to_refuel,
+            "range_jumps": range_jumps,
+            "fuel_status": fuel_status,
             "location": ship['location'],
             "star_class": star_class,
             "scoopable": bool(star_class in ['F', 'O', 'G', 'K', 'B', 'A', 'M']),
