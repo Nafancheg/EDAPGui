@@ -468,17 +468,22 @@
     else if (ph === 'CLIMB') renderPhaseCLIMB();
     else if (ph === 'ARRIVAL') renderPhaseARRIVAL();
     else renderPhaseLND();
-    // R6 NEXT PHASE> is common to every phase
-    fill(5, { rv: 'NEXT PHASE>', rvs: 's-cyan' });
+    // Phase nav is bidirectional here (unlike an aircraft's one-way flow):
+    // the ARRIVAL->DEPART leg loops and a phase can regress, so PREV/NEXT are
+    // symmetric on L6/R6. Deliberate deviation from spec §1.3 (see Замечание 11).
+    fill(5, { lv: '<PREV PHASE', lvs: 's-cyan', rv: 'NEXT PHASE>', rvs: 's-cyan' });
+    actions.L[5] = { press: prevPhase, input: null };
     actions.R[5] = { press: nextPhase, input: null };
   }
 
-  function nextPhase() {
+  function stepPhase(delta) {
     var order = PHASES;
     var idx = order.indexOf(viewedPhase());
-    S.phase = order[(idx + 1) % order.length];
+    S.phase = order[(idx + delta + order.length) % order.length];
     render();
   }
+  function nextPhase() { stepPhase(1); }
+  function prevPhase() { stepPhase(-1); }
 
   function renderPhaseDEPART() {
     var snap = S.snap;
