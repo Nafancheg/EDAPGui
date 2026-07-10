@@ -96,6 +96,7 @@ class FakeAP:
             "fuel_status": status,
             "location": "Devataru",
             "star_class": "M",
+            "fss_body_count": 17,
             "scoopable": False,
             "target": "Maia",
             "jumps_remaining": 9,

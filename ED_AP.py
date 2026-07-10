@@ -685,6 +685,7 @@ class EDAutopilot:
             "fuel_status": fuel_status,
             "location": ship['location'],
             "star_class": star_class,
+            "fss_body_count": ship.get('fss_body_count'),
             "scoopable": bool(star_class in ['F', 'O', 'G', 'K', 'B', 'A', 'M']),
             "target": ship['target'],
             "jumps_remaining": ship['jumps_remains'],

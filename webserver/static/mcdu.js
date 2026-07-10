@@ -42,7 +42,8 @@
     assist: { fsd: false, sc: false },
     fastTravel: false,
     connected: false,
-    routePage: 0,
+    routePage: 0,           // top line index of the F-PLN scroll window
+    sysInfoIdx: null,        // route system index open on the SYSINFO sub-page
     statusline: '',
     routeLoc: null,          // location last used to refresh the route
     flash: null,             // transient scratchpad message
@@ -418,18 +419,6 @@
     render();
   }
 
-  // per-system info to the scratchpad (spec §3.3): NN <system> · <class> · SCOOP · n.n LY
-  function routeInfo(it, gi) {
-    var num = pad2(gi + 1);
-    var cls = it.star_class || '?';
-    var scoop = it.scoopable ? 'SCOOP' : 'NO SCOOP';
-    var dist = (gi === 0) ? 'ORIGIN'
-      : (it.dist_ly === null || it.dist_ly === undefined ? '-- LY' : Number(it.dist_ly).toFixed(1) + ' LY');
-    var msg = num + ' ' + (it.system || '?') + ' · ' + cls + ' · ' + scoop + ' · ' + dist;
-    appendLog(msg, false, false);
-    flash(msg, 1500);
-  }
-
   // ---- render helpers ----
   function fill(i, o) {
     var r = rows[i];
@@ -599,34 +588,23 @@
       && (snap.total_jumps === null || snap.total_jumps === undefined);
     var jc = (snap.jump_cnt === null || snap.jump_cnt === undefined) ? '-' : snap.jump_cnt;
     var tj = (snap.total_jumps === null || snap.total_jumps === undefined) ? '-' : snap.total_jumps;
+    // scans and modes (FSS/HONK/ELW/FAST TRAVEL) now live on CRU OPT (RAD NAV
+    // key); CRUISE keeps only the two in-flight actions FSD ROUTE and SCOOP NOW.
     fill(0, {
       lv: fsdOn ? '<FSD ROUTE ON' : '<FSD ROUTE OFF', lvs: fsdOn ? 's-on' : 's-off',
       rh: 'JUMPS', rv: noJumps ? '---' : jc + '/' + tj, rvs: noJumps ? 's-muted' : 's-normal'
     });
     actions.L[0] = { press: fsdToggle, input: null };
 
-    fill(1, {
-      lv: '<FSS SCAN', lvs: 's-normal',
-      rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted'
-    });
-    actions.L[1] = { press: function () { sendAction('fss_scan'); }, input: null };
+    fill(1, { rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted' });
 
-    fill(2, {
-      lv: '<HONK', lvs: 's-normal',
-      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
-    });
-    actions.L[2] = { press: function () { sendAction('honk'); }, input: null };
+    fill(2, { rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted' });
 
-    var elwOn = !!S.cfg.ElwScannerEnable;
     var hasDist = snap.total_dist_jumped !== null && snap.total_dist_jumped !== undefined;
     var distVal = hasDist
       ? Number(snap.total_dist_jumped).toFixed(1) + ' LY · ' + (snap.jumps_remaining ?? '-') + ' LEFT'
       : '---';
-    fill(3, {
-      lv: elwOn ? '<ELW SCAN ON' : '<ELW SCAN OFF', lvs: elwOn ? 's-on' : 's-off',
-      rh: 'DIST', rv: distVal, rvs: hasDist ? 's-normal' : 's-muted'
-    });
-    actions.L[3] = { press: elwToggle, input: null };
+    fill(3, { rh: 'DIST', rv: distVal, rvs: hasDist ? 's-normal' : 's-muted' });
 
     var f = fuelCell(snap.fuel_percent);
     var scoopSuffix = snap.star_class ? (snap.scoopable ? ' · SCOOP' : ' · ✗') : '';
@@ -707,12 +685,13 @@
     return 'keep';
   }
 
-  // F-PLN · ACTIVE ROUTE, spec §3.3 + Замечание 12: the whole plan is one
+  // F-PLN · ACTIVE ROUTE, spec §3.3 + Замечания 12/13: the whole plan is one
   // continuous list scrolled with the vertical slew (like a real aircraft
-  // F-PLN — no NEXT PAGE). Rows 1-4 are the scroll window (S.routePage = top
-  // line index); fixed row 5 = FAST TRAVEL + DEST; row 6 = TOTAL jumps · LY.
-  // Only the left LSK of a list row acts (per-system info to scratchpad).
-  var ROUTE_WIN = 4;
+  // F-PLN — no NEXT PAGE). 5-row window (S.routePage = top line index); the
+  // plan total (jumps · LY) is the last scrolled line (END OF PLAN), not a
+  // static row. Left LSK on a system drills into its SYSINFO page. FAST TRAVEL
+  // moved off F-PLN to CRU OPT.
+  var ROUTE_WIN = 5;
 
   function routeTotalLy(sys) {
     var t = 0;
@@ -721,6 +700,11 @@
       if (!isNaN(d)) t += d;
     }
     return t;
+  }
+  // list length includes a trailing END-OF-PLAN line when a route is active
+  function routeItemCount() {
+    var n = (S.route.systems || []).length;
+    return n ? n + 1 : 0;
   }
 
   function renderROUTE() {
@@ -735,7 +719,8 @@
       return;
     }
 
-    var maxScroll = Math.max(0, sys.length - ROUTE_WIN);
+    var total = routeItemCount();          // systems + END OF PLAN line
+    var maxScroll = Math.max(0, total - ROUTE_WIN);
     if (S.routePage > maxScroll) S.routePage = maxScroll;
     if (S.routePage < 0) S.routePage = 0;
     var top = S.routePage;
@@ -746,7 +731,15 @@
 
     for (var r = 0; r < ROUTE_WIN; r++) {
       var gi = top + r;
-      if (gi >= sys.length) continue;
+      if (gi > sys.length) continue;
+      if (gi === sys.length) {
+        // END OF PLAN — plan total scrolls into view at the end (not static)
+        fill(r, {
+          lh: 'END OF PLAN', lv: (sys.length - 1) + ' JMP', lvs: 's-cyan',
+          rh: 'TOTAL', rv: routeTotalLy(sys).toFixed(1) + ' LY', rvs: 's-cyan'
+        });
+        continue;
+      }
       var it = sys[gi];
       var head = pad2(gi + 1) + ' ' + (it.star_class || '?');
       var dist = (gi === 0) ? 'ORIGIN'
@@ -757,23 +750,10 @@
         lv: (cur ? '>' : '') + (it.system || '?'), lvs: cur ? 's-cyan' : 's-normal',
         rv: it.scoopable ? 'SCOOP' : '✗', rvs: it.scoopable ? 's-on' : 's-alert'
       });
-      (function (item, idx) {
-        actions.L[r] = { press: function () { routeInfo(item, idx); }, input: null };
-      })(it, gi);
+      (function (idx) {
+        actions.L[r] = { press: function () { openSysInfo(idx); }, input: null };
+      })(gi);
     }
-
-    // fixed row 5: FAST TRAVEL toggle (left) + DEST (right)
-    fill(4, {
-      lv: S.fastTravel ? '<FAST TRAVEL  ON' : '<FAST TRAVEL  OFF', lvs: S.fastTravel ? 's-on' : 's-off',
-      rh: 'DEST', rv: S.route.destination ? String(S.route.destination) : '---',
-      rvs: S.route.destination ? 's-normal' : 's-muted'
-    });
-    actions.L[4] = { press: ftToggle, input: null };
-
-    // row 6: whole-plan total — jumps and light-years (display only)
-    fill(5, {
-      rh: 'TOTAL', rv: (sys.length - 1) + ' JMP · ' + routeTotalLy(sys).toFixed(1) + ' LY', rvs: 's-cyan'
-    });
   }
 
   // FUEL PRED main page, spec §3.6. Header indicator mirrors the LED status.
@@ -848,6 +828,88 @@
 
     fill(5, { lv: '<RETURN', lvs: 's-normal' });
     actions.L[5] = { press: function () { setPage('FUEL'); }, input: null };
+  }
+
+  // CRU OPT (repurposed RAD NAV key): cruise-behaviour settings collected in one
+  // place — FAST TRAVEL and ELW SCAN as persistent [T]; HONK and FSS SCAN as
+  // one-shot [A] for the current system (no auto-mode backend yet).
+  function renderCRUOPT() {
+    setHeader('CRU OPT', 'CRUISE');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    fill(0, {
+      lv: S.fastTravel ? '<FAST TRAVEL  ON' : '<FAST TRAVEL  OFF', lvs: S.fastTravel ? 's-on' : 's-off',
+      rh: 'MODE', rv: 'SKIP SCANS', rvs: 's-muted'
+    });
+    actions.L[0] = { press: ftToggle, input: null };
+
+    var elwOn = !!S.cfg.ElwScannerEnable;
+    fill(1, { lv: elwOn ? '<ELW SCAN  ON' : '<ELW SCAN  OFF', lvs: elwOn ? 's-on' : 's-off' });
+    actions.L[1] = { press: elwToggle, input: null };
+
+    fill(2, { lv: '<HONK', lvs: 's-normal' });
+    actions.L[2] = { press: function () { sendAction('honk'); }, input: null };
+
+    fill(3, { lv: '<FSS SCAN', lvs: 's-normal' });
+    actions.L[3] = { press: function () { sendAction('fss_scan'); }, input: null };
+  }
+
+  // SYSINFO: per-system detail, opened from a left LSK on F-PLN (spec §3.3 drill-
+  // in). Journal gives us basics; body count and external data (EDSM/Spansh)
+  // arrive in Phase 8.1, shown as [план] until then.
+  function renderSYSINFO() {
+    var sys = S.route.systems || [];
+    var idx = S.sysInfoIdx;
+    var it = (idx !== null && idx >= 0 && idx < sys.length) ? sys[idx] : null;
+    setHeader('SYSTEM', it ? pad2(idx + 1) + '/' + sys.length : '---', !it);
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    if (!it) {
+      fill(2, { lv: 'NO SYSTEM SELECTED', lvs: 's-muted', center: true });
+      fill(5, { lv: '<RETURN', lvs: 's-normal' });
+      actions.L[5] = { press: function () { setPage('ROUTE'); }, input: null };
+      return;
+    }
+
+    var loc = S.snap.location ? String(S.snap.location).toLowerCase() : null;
+    var isCurrent = it.system && loc && String(it.system).toLowerCase() === loc;
+
+    fill(0, {
+      lh: 'SYSTEM', lv: (isCurrent ? '>' : '') + (it.system || '?'), lvs: isCurrent ? 's-cyan' : 's-normal',
+      rh: 'CLASS', rv: it.star_class || '---', rvs: it.star_class ? 's-normal' : 's-muted'
+    });
+    fill(1, {
+      lh: 'SCOOPABLE', lv: it.scoopable ? 'YES' : 'NO', lvs: it.scoopable ? 's-on' : 's-alert',
+      rh: 'DIST', rv: (idx === 0) ? 'ORIGIN'
+        : (it.dist_ly === null || it.dist_ly === undefined ? '---' : Number(it.dist_ly).toFixed(1) + ' LY'),
+      rvs: 's-normal'
+    });
+
+    // body count: only the current system is scanned; journal gives fss_body_count
+    var bodies = isCurrent && S.snap.fss_body_count ? String(S.snap.fss_body_count) : '---';
+    fill(2, { lh: 'BODIES', lv: bodies, lvs: (bodies === '---') ? 's-muted' : 's-normal',
+      rh: 'EDSM', rv: 'NO DATA', rvs: 's-muted' });
+
+    // scan actions only make sense for the system we are in
+    if (isCurrent) {
+      fill(3, { lv: '<HONK', lvs: 's-normal', rh: '', rv: '' });
+      actions.L[3] = { press: function () { sendAction('honk'); }, input: null };
+      fill(4, { lv: '<FSS SCAN', lvs: 's-normal' });
+      actions.L[4] = { press: function () { sendAction('fss_scan'); }, input: null };
+    } else {
+      fill(3, { lv: 'EXTERNAL DATA', lvs: 's-muted', center: true });
+      fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint', center: true });
+    }
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('ROUTE'); }, input: null };
+  }
+
+  function openSysInfo(gi) {
+    S.sysInfoIdx = gi;
+    setPage('SYSINFO');
   }
 
   function renderPERF() {
@@ -1023,7 +1085,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -1075,13 +1137,15 @@
     else if (S.page === 'FUEL_SEL') renderFUELSEL();
     else if (S.page === 'PERF') renderPERF();
     else if (S.page === 'DIR') renderDIR();
+    else if (S.page === 'CRUOPT') renderCRUOPT();
+    else if (S.page === 'SYSINFO') renderSYSINFO();
     else renderINIT();
 
     // show/hide curve panel
     if (S.page !== 'PERF') hideCurvePanel();
 
     // highlight active function key (sub-pages light their parent key)
-    var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : S.page;
+    var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' : S.page;
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
       b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === pageKey);
@@ -1091,7 +1155,7 @@
   }
 
   function routeMaxScroll() {
-    return Math.max(0, (S.route.systems || []).length - ROUTE_WIN);
+    return Math.max(0, routeItemCount() - ROUTE_WIN);
   }
   function clampRoutePage() {
     var m = routeMaxScroll();
