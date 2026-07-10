@@ -72,9 +72,9 @@
 - [x] 🔵 Страница §3.6: R1 `%·тонны`, R2 TO REFUEL, R3 AVG/JUMP, R4 RANGE, R5 порог [E] (0–100 → `INVALID`, пишет `config.set RefuelThreshold`); L1 → подстраница REFUEL SELECT (STAR THIS SYSTEM → `action scoop`, станции/точки [план] `NOT AVAILABLE`, L6 RETURN); индикатор шапки = статус.
 - [x] 🔵 LED FUEL PRED от бэкенд-enum (клиентские пороги убраны); unknown/OFFLINE → ⚫, статус НЕ critical.
 
-**7.3.3 — F-PLN приведение к контракту (приоритет 3, спека §3.3):**
-- [ ] 🔵 Список 4 системы/страницу (`ROUTE n/m →`), фикс-строка 5 (L5 FAST TRAVEL, R5 DEST+jumps), R6 NEXT PAGE; per-system info по левому LSK → сообщение в scratchpad; правые ячейки списка — только [V].
-- [ ] 🔵 Автообновление (открытие страницы + смена location) вместо кнопки REFRESH (упразднена — замечание 1); пустое состояние `NO ACTIVE ROUTE`.
+**7.3.3 — F-PLN приведение к контракту (приоритет 3, спека §3.3): ✅ (2026-07-11, инлайн)**
+- [x] 🔵 Список 4 системы/страницу (`ROUTE n/m →`), фикс-строка 5 (L5 `<FAST TRAVEL` [T] `ftToggle`, R5 `DEST · N JMP` [V]), R6 `NEXT PAGE>` (только при pages>1, `nextRoutePage`); per-system info по левому LSK → scratchpad (`NN SYS · класс · SCOOP/NO SCOOP · n.n LY`); правые ячейки — только [V] (actions.R не назначаются).
+- [x] 🔵 Автообновление уже было (открытие через `setPage` + смена location в `handle`); кнопка REFRESH упразднена (осиротевший `refreshRoute` удалён); пустое состояние `NO ACTIVE ROUTE` / `PLOT ROUTE IN GALAXY MAP`, фикс-строка/NEXT PAGE скрыты.
 
 **7.3.4 — Остальные активные страницы (после приоритетных):**
 - [ ] 🔵 INIT · PREFLIGHT полный (§3.2): входы в разделы L1–L5, сводка справа, R6 `PROG>`.

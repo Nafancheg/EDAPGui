@@ -418,13 +418,14 @@
     render();
   }
 
-  function refreshRoute() {
-    if (ensureConn()) sendRaw({ cmd: 'route.get' });
-  }
-
-  function routeInfo(it) {
-    var name = it.system || '?';
-    var msg = name + ': ' + (it.star_class || '?') + ' ' + (it.scoopable ? 'SCOOPABLE' : 'NOT SCOOPABLE');
+  // per-system info to the scratchpad (spec §3.3): NN <system> · <class> · SCOOP · n.n LY
+  function routeInfo(it, gi) {
+    var num = pad2(gi + 1);
+    var cls = it.star_class || '?';
+    var scoop = it.scoopable ? 'SCOOP' : 'NO SCOOP';
+    var dist = (gi === 0) ? 'ORIGIN'
+      : (it.dist_ly === null || it.dist_ly === undefined ? '-- LY' : Number(it.dist_ly).toFixed(1) + ' LY');
+    var msg = num + ' ' + (it.system || '?') + ' · ' + cls + ' · ' + scoop + ' · ' + dist;
     appendLog(msg, false, false);
     flash(msg, 1500);
   }
@@ -706,6 +707,9 @@
     return 'keep';
   }
 
+  // F-PLN · ACTIVE ROUTE, spec §3.3: 4 systems/page (rows 1-4), fixed row 5
+  // (FAST TRAVEL + DEST), R6 NEXT PAGE. Only the left LSK of a list row acts
+  // (per-system info to scratchpad); right cells are display-only.
   function renderROUTE() {
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
@@ -715,8 +719,6 @@
       setHeader('F-PLN', 'ROUTE 1/1 →');
       fill(2, { lv: 'NO ACTIVE ROUTE', lvs: 's-muted', center: true });
       fill(3, { lv: 'PLOT ROUTE IN GALAXY MAP', lvs: 's-hint', center: true });
-      fill(5, { rh: '', rv: 'REFRESH>', rvs: 's-cyan' });
-      actions.R[5] = { press: refreshRoute, input: function () { return false; } };
       return;
     }
 
@@ -725,11 +727,10 @@
     if (S.routePage < 0) S.routePage = 0;
     setHeader('F-PLN', 'ROUTE ' + (S.routePage + 1) + '/' + pages + ' →');
 
-    var start = S.routePage * 6;
+    var start = S.routePage * 4;
     var loc = S.snap.location ? String(S.snap.location).toLowerCase() : null;
-    var filled = 0;
 
-    for (var r = 0; r < 6; r++) {
+    for (var r = 0; r < 4; r++) {
       var gi = start + r;
       if (gi >= sys.length) continue;
       var it = sys[gi];
@@ -742,20 +743,30 @@
         lv: (cur ? '>' : '') + (it.system || '?'), lvs: cur ? 's-cyan' : 's-normal',
         rv: it.scoopable ? 'SCOOP' : '✗', rvs: it.scoopable ? 's-on' : 's-alert'
       });
-      (function (item) {
-        var act = { press: function () { routeInfo(item); }, input: function () { return false; } };
-        actions.L[filled] = act; actions.R[filled] = act;
-      })(it);
-      filled++;
+      (function (item, idx) {
+        actions.L[r] = { press: function () { routeInfo(item, idx); }, input: null };
+      })(it, gi);
     }
 
-    // DEST / JUMPS footer in the first trailing empty row (if the page is not full)
-    if (filled < 6) {
-      fill(filled, {
-        lh: 'TOTAL', lv: (sys.length - 1) + ' JUMPS', lvs: 's-cyan',
-        rh: 'DEST', rv: S.route.destination ? String(S.route.destination) : '---', rvs: S.route.destination ? 's-normal' : 's-muted'
-      });
+    // fixed row 5: FAST TRAVEL toggle (left) + DEST · total jumps (right)
+    fill(4, {
+      lv: S.fastTravel ? '<FAST TRAVEL  ON' : '<FAST TRAVEL  OFF', lvs: S.fastTravel ? 's-on' : 's-off',
+      rh: 'DEST',
+      rv: (S.route.destination ? String(S.route.destination) : '---') + ' · ' + (sys.length - 1) + ' JMP',
+      rvs: S.route.destination ? 's-normal' : 's-muted'
+    });
+    actions.L[4] = { press: ftToggle, input: null };
+
+    // R6 NEXT PAGE (only when there is more than one page to cycle)
+    if (pages > 1) {
+      fill(5, { rv: 'NEXT PAGE>', rvs: 's-cyan' });
+      actions.R[5] = { press: nextRoutePage, input: null };
     }
+  }
+
+  function nextRoutePage() {
+    S.routePage = (S.routePage + 1) % routePages();
+    render();
   }
 
   // FUEL PRED main page, spec §3.6. Header indicator mirrors the LED status.
@@ -1073,7 +1084,7 @@
   }
 
   function routePages() {
-    return Math.max(1, Math.ceil((S.route.systems || []).length / 6));
+    return Math.max(1, Math.ceil((S.route.systems || []).length / 4));
   }
   function clampRoutePage() {
     var p = routePages();
