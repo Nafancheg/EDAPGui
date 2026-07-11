@@ -1277,8 +1277,11 @@
       lv: '<SAVE TO DISK', lvs: 's-on',
       rv: 'DEL PT>', rvs: 's-cyan'
     });
-    actions.L[3] = { press: curveSaveAll, input: function () { return 'keep'; } };
-    actions.R[3] = { press: curveDelPoint, input: function () { return false; } };
+    // input: null — these keys take no scratchpad entry, so a non-empty
+    // scratch correctly gets the standard NOT ALLOWED flash (entry preserved)
+    // instead of being silently swallowed ('keep') or mislabelled INVALID.
+    actions.L[3] = { press: curveSaveAll, input: null };
+    actions.R[3] = { press: curveDelPoint, input: null };
 
     // Row 4: selected point info / set value from scratchpad
     fill(4, {
@@ -1288,7 +1291,7 @@
       rh: '', rv: 'SAVE>', rvs: 's-on'
     });
     actions.L[4] = { press: function () {}, input: curveSetValue };
-    actions.R[4] = { press: curveSave, input: function () { return 'keep'; } };
+    actions.R[4] = { press: curveSave, input: null };
 
     // Row 5: return to SETTINGS root
     fill(5, { lv: '<RETURN', lvs: 's-normal' });
