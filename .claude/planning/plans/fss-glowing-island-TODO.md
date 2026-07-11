@@ -12,7 +12,8 @@
 - ✅ **Фаза 7.0–7.2 завершены** (capture-харнесс; EDMesg удалён; `docs/web_api_contract.md`; headless aiohttp-сервер `webserver/` + `edap_headless.py`) → ченджлог.
 - ✅ **Фаза 7.3.0–7.3.3 завершены** (HMI-контракт; PROG-фазы+PREFLIGHT+DIR; FUEL PRED; F-PLN §3.3 + CRU OPT/SYSTEM drill-in) → ченджлог. Замечания 11–13 в `design/mcdu-button-map.md`.
 - ✅ **Фаза 7.3.4 завершена** (DATA·SYSTEM DATA; бэкенд сеттер-диспатч; MCDU MENU·SETTINGS §3.9; INIT·PREFLIGHT полный; PERF→подстраница SETTINGS «RPY TUNING», PERF-клавиша INOP). Замечание 14 в спеке. Коммиты `2514b0d`,`eff958c`,`d709e16`,`e4f058c`.
-- ➡️ **ТЕКУЩАЯ: Фаза 7.3.5** — [план/бэкенд]-страницы каркасом (DIR·DIRECT-TO §3.5, SEC F-PLN §3.4), действия отвечают `NOT AVAILABLE` до бэкенда 8.1.
+- ✅ **Фаза 7.3.5 завершена** (каркасы DIR·DIRECT-TO §3.5 + SEC F-PLN §3.4 с двухшаговым ACTIVATE, коммит `db6a1b3`).
+- ➡️ **ТЕКУЩАЯ: витрина MCDU (7.3) в основном собрана.** Осталось в Фазе 7: проверка Фазы 7 на игровом ПК (планшет по IP), затем 7.4 (удаление tkinter после паритета). Фоном: бэкенд персиста веб-настроек (config.save/load для LOAD/SAVE ALL).
 - ⛔ Фазы 3–6 gated на игру (решение 2026-07-07: Фаза 7 перед 3–4; обоснование в ченджлоге).
 
 **🎮 Висит на игровом ПК (при ближайшей сессии с ED):**
@@ -65,7 +66,7 @@
 > ⚠️ **Бэкенд-гэп из SETTINGS (follow-up, не блокер):** `LOAD ALL`/`SAVE ALL` (root L4/L5) и `SAVE SHIP`/`SAVE ALL` в PERF §3.7 требуют WS-команд персиста (`config.save` = `update_config`+`update_ship_configs`+calib; `config.load` = перечитать `AP.json`). Сейчас `config.set` живёт только в памяти ядра — веб-тумблеры НЕ персистятся на диск до этой команды. Плюс CONFIG L2–L4 (reload/auto-assign/refresh bindings) и BINDS-статус — тоже без команд. Мелкий бэкенд-юнит; согласовать при PERF (там SAVE SHIP уже нужен через `config.save_ship`, который ЕСТЬ).
 
 **7.3.5 — [план/бэкенд]-страницы каркасом (UI со слотами и [план]-разметкой, живут после Фазы 8):**
-- [ ] 🔵 DIR · DIRECT-TO (§3.5), SEC F-PLN · SECONDARY ROUTE (§3.4, двухшаговый ACTIVATE `CONFIRM?`) — кнопки/валидации на месте, действия отвечают `NOT AVAILABLE` до бэкенда 8.1.
+- [x] 🔵 DIR · DIRECT-TO (§3.5), SEC F-PLN · SECONDARY ROUTE (§3.4, двухшаговый ACTIVATE `CONFIRM?`) — кнопки/валидации на месте, действия отвечают `NOT AVAILABLE` до бэкенда 8.1. ✅ коммит `db6a1b3`. SEC — корневая (hardware-клавиша), двухшаговый CONFIRM? с авто-сбросом 5с; DIR добит до §3.5 (добавлен R3 класс·дистанция).
 
 ### 7.4 — Удаление tkinter
 - [ ] 🟣 [INLINE] После паритета веб-UI со старым — удалить `EDAPGui.py`, `Overlay.py`, `sv_ttk/`, tkinter-зависимости. Финальная цель: единственный UI = веб.
