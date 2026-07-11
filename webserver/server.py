@@ -184,6 +184,23 @@ def _normalize_curve(data):
     return {str(angle): round(rate, 2) for angle, rate in entries}
 
 
+def _apply_config_side_effects(ed_ap, key: str):
+    """Fire the live side-effect for a config key when writing it isn't enough.
+
+    process_config_settings() (called just before this) already applies most
+    settings from config: ActivateEliteEachKey, the key-emulation timings, the
+    debug flags and cv_view. The overlay reads OverlayTextEnable from config on
+    every update_overlay() cycle. What it does NOT do is start/stop the TTS
+    worker or repaint the overlay right away, so a web toggle for those would
+    otherwise only take effect on the next relevant event. Fire their setters
+    here. New keys with their own side-effects get added to this map.
+    """
+    if key == "VoiceEnable":
+        ed_ap.set_voice(bool(ed_ap.config.get("VoiceEnable")))
+    elif key == "OverlayTextEnable":
+        ed_ap.set_overlay(bool(ed_ap.config.get("OverlayTextEnable")))
+
+
 async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: dict):
     """Handle a single UI -> core command. Runs on the asyncio thread, which
     is safe: set_*_assist is thread-safe and the throttle setters are quick."""
@@ -232,6 +249,7 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         else:
             ed_ap.config[key] = cmd.get("value")
             ed_ap.process_config_settings()
+            _apply_config_side_effects(ed_ap, key)
             # keep every connected client's view of the config in sync
             await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
     elif name == "config.save_ship":
