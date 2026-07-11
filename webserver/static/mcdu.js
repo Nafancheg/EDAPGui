@@ -168,7 +168,7 @@
       case 'error':
         if (S.curvePending) {
           // most likely our curve.get failed (e.g. ship not detected yet):
-          // stop re-requesting every render tick; re-entering PERF retries
+          // stop re-requesting every render tick; re-entering TUNING retries
           S.curvePending = false;
           S.curveNeedsLoad = false;
         }
@@ -184,9 +184,9 @@
         if (S.curveNeedsLoad && S.curveEditor) {
           S.curveEditor.setPoints(msg.data || {});
           S.curveNeedsLoad = false;
-        } else if (!S.curveEditor && S.page === 'PERF') {
+        } else if (!S.curveEditor && S.page === 'TUNING') {
           S.curveNeedsLoad = true;  // will be consumed when editor is built
-          renderPERF();
+          renderTUNING();
         }
         break;
       case 'curve_saved':
@@ -482,7 +482,7 @@
     var order = [0, 50, 100];
     var next = (S.throttle === null) ? 0 : order[(order.indexOf(S.throttle) + 1) % 3];
     if (sendRaw({ cmd: 'throttle.set', level: next })) S.throttle = next;
-    if (S.page === 'PERF') S.curveNeedsLoad = true;
+    if (S.page === 'TUNING') S.curveNeedsLoad = true;
     render();
   }
   function throttleInput(v) {
@@ -490,7 +490,7 @@
     if (n !== '0' && n !== '50' && n !== '100') return false;
     if (!ensureConn()) return 'keep';
     var lvl = parseInt(n, 10);
-    if (sendRaw({ cmd: 'throttle.set', level: lvl })) { S.throttle = lvl; if (S.page === 'PERF') S.curveNeedsLoad = true; render(); return true; }
+    if (sendRaw({ cmd: 'throttle.set', level: lvl })) { S.throttle = lvl; if (S.page === 'TUNING') S.curveNeedsLoad = true; render(); return true; }
     return 'keep';
   }
 
@@ -732,10 +732,8 @@
       rh: 'JUMPS', rv: S.route.active ? String(S.route.systems.length - 1) : '---',
       rvs: S.route.active ? 's-normal' : 's-muted' });
     actions.L[1] = { press: function () { setPage('FUEL'); }, input: null };
-    fill(2, { lv: '<PERF', lvs: 's-normal',
-      rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---',
+    fill(2, { rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---',
       rvs: snap.ship_status ? 's-normal' : 's-muted' });
-    actions.L[2] = { press: function () { setPage('PERF'); }, input: null };
     fill(3, { lv: '<DATA', lvs: 's-normal', rh: 'FUEL', rv: f.t, rvs: f.s });
     actions.L[3] = { press: function () { setPage('DATA'); }, input: null };
     fill(4, { lv: '<SETTINGS', lvs: 's-normal',
@@ -1052,11 +1050,14 @@
     fill(2, { lv: '<MAINT', lvs: 's-normal' });
     actions.L[2] = { press: function () { setPage('MAINT'); }, input: null };
 
-    fill(3, { lv: '<LOAD ALL', lvs: 's-normal' });
-    actions.L[3] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    fill(3, { lv: '<RPY TUNING', lvs: 's-normal' });
+    actions.L[3] = { press: function () { setPage('TUNING'); }, input: null };
 
-    fill(4, { lv: '<SAVE ALL', lvs: 's-normal' });
+    fill(4, { lv: '<LOAD ALL', lvs: 's-normal' });
     actions.L[4] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(5, { lv: '<SAVE ALL', lvs: 's-normal' });
+    actions.L[5] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
   }
 
   // MCDU MENU · OPTIONS sub-page, spec §3.9. Persistent behaviour toggles.
@@ -1152,8 +1153,11 @@
     actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
   }
 
-  function renderPERF() {
-    setHeader('RPY CURVES', 'PERF');
+  // RPY TUNING · spec §3.7. Formerly the top-level PERF page; moved under
+  // SETTINGS as a ship-tuning sub-page (заказчик: настройка корабля, не
+  // лётная механика — Замечание 14). Reached only via SETTINGS > RPY TUNING.
+  function renderTUNING() {
+    setHeader('RPY CURVES', 'SETTINGS');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
@@ -1182,16 +1186,16 @@
       rh: 'SPEED', rv: spd, rvs: 's-muted'
     });
 
-    // Row 2: hint
-    fill(2, { lv: 'DRAG PTS - DBL-CLICK ADDS', lvs: 's-hint', center: true });
+    // Row 2: hint — point selection now happens via slew (see slew()), not an LSK row
+    fill(2, { lv: 'DRAG PTS · DBL-CLICK ADDS · SLEW ↔ SEL PT', lvs: 's-hint', center: true });
 
-    // Row 3: select prev/next point
+    // Row 3: save to disk / delete selected point (moved up from row 5)
     fill(3, {
-      lh: '', lv: 'SEL PT<', lvs: 's-cyan',
-      rh: '', rv: '>NEXT PT', rvs: 's-cyan'
+      lv: '<SAVE TO DISK', lvs: 's-on',
+      rv: 'DEL PT>', rvs: 's-cyan'
     });
-    actions.L[3] = { press: curveSelPrev, input: function () { return false; } };
-    actions.R[3] = { press: curveSelNext, input: function () { return false; } };
+    actions.L[3] = { press: curveSaveAll, input: function () { return 'keep'; } };
+    actions.R[3] = { press: curveDelPoint, input: function () { return false; } };
 
     // Row 4: selected point info / set value from scratchpad
     fill(4, {
@@ -1203,13 +1207,9 @@
     actions.L[4] = { press: function () {}, input: curveSetValue };
     actions.R[4] = { press: curveSave, input: function () { return 'keep'; } };
 
-    // Row 5: save to disk / delete selected point
-    fill(5, {
-      lv: '<SAVE TO DISK', lvs: 's-on',
-      rv: 'DEL PT>', rvs: 's-cyan'
-    });
-    actions.L[5] = { press: curveSaveAll, input: function () { return 'keep'; } };
-    actions.R[5] = { press: curveDelPoint, input: function () { return false; } };
+    // Row 5: return to SETTINGS root
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
 
     // show the curve editor panel below the instrument
     curvePanel.hidden = false;
@@ -1235,7 +1235,7 @@
     curveView.innerHTML = '';
     S.curveNeedsLoad = true;
     S.curvePending = false;
-    renderPERF();
+    renderTUNING();
   }
 
   function curveAxisCycle() {
@@ -1257,14 +1257,14 @@
     var idx = S.curveEditor.selectedIndex();
     if (idx < 0) idx = 0;
     S.curveEditor.selectIndex(Math.max(0, idx - 1));
-    renderPERF();
+    renderTUNING();
   }
 
   function curveSelNext() {
     if (!S.curveEditor) return;
     var idx = S.curveEditor.selectedIndex();
     S.curveEditor.selectIndex(idx + 1);
-    renderPERF();
+    renderTUNING();
   }
 
   function curveSelLabel() {
@@ -1282,7 +1282,7 @@
     var n = parseFloat(v.trim());
     if (isNaN(n) || n < 0) return false;
     if (!S.curveEditor.setSelectedValue(n)) { flash('SELECT A POINT', 1500); return 'keep'; }
-    renderPERF();
+    renderTUNING();
     return true;
   }
 
@@ -1311,7 +1311,7 @@
     if (!S.curveEditor) return;
     if (S.curveEditor.selectedIndex() < 0) { flash('SELECT A POINT', 1500); return; }
     if (!S.curveEditor.deleteSelected()) { flash('LAST POINT', 1500); return; }
-    renderPERF();
+    renderTUNING();
   }
 
   function curveOnChange(data) {
@@ -1325,7 +1325,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -1375,7 +1375,7 @@
     else if (S.page === 'ROUTE') renderROUTE();
     else if (S.page === 'FUEL') renderFUEL();
     else if (S.page === 'FUEL_SEL') renderFUELSEL();
-    else if (S.page === 'PERF') renderPERF();
+    else if (S.page === 'TUNING') renderTUNING();
     else if (S.page === 'DIR') renderDIR();
     else if (S.page === 'CRUOPT') renderCRUOPT();
     else if (S.page === 'SYSINFO') renderSYSINFO();
@@ -1387,11 +1387,11 @@
     else renderINIT();
 
     // show/hide curve panel
-    if (S.page !== 'PERF') hideCurvePanel();
+    if (S.page !== 'TUNING') hideCurvePanel();
 
     // highlight active function key (sub-pages light their parent key)
     var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' :
-      (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT') ? 'SETTINGS' : S.page;
+      (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT' || S.page === 'TUNING') ? 'SETTINGS' : S.page;
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
       b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === pageKey);
@@ -1412,10 +1412,10 @@
   // ---- navigation ----
   function setPage(p) {
     if (S.page === p) return;
-    if (S.page === 'PERF') hideCurvePanel();
+    if (S.page === 'TUNING') hideCurvePanel();
     S.page = p;
     if (p === 'ROUTE' || p === 'INIT' || p === 'DATA') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
-    if (p === 'PERF') S.curveNeedsLoad = true;
+    if (p === 'TUNING') S.curveNeedsLoad = true;
     render();
   }
 
@@ -1441,7 +1441,7 @@
       else if (dir === 'l') S.routePage = Math.max(0, S.routePage - ROUTE_WIN);
       else if (dir === 'r') S.routePage = Math.min(m, S.routePage + ROUTE_WIN);
       render();
-    } else if (S.page === 'PERF') {
+    } else if (S.page === 'TUNING') {
       if (dir === 'l') curveSelPrev();
       else if (dir === 'r') curveSelNext();
     }
