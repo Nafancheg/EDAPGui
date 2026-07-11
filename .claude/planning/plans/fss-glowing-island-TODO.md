@@ -6,11 +6,12 @@
 
 ---
 
-## Состояние (2026-07-10)
+## Состояние (2026-07-11)
 
 - ✅ **Фазы 0–2 завершены** (подготовка; расчистка периферии; ED_AP.py 4574→1527 строк, лётная логика в `services/`) → ченджлог.
 - ✅ **Фаза 7.0–7.2 завершены** (capture-харнесс; EDMesg удалён; `docs/web_api_contract.md`; headless aiohttp-сервер `webserver/` + `edap_headless.py`) → ченджлог.
-- ➡️ **ТЕКУЩАЯ: Фаза 7.3** — MCDU-фронтенд по нормативной спеке `design/mcdu-button-map.md`.
+- ✅ **Фаза 7.3.0–7.3.3 завершены** (HMI-контракт; PROG-фазы+PREFLIGHT+DIR; FUEL PRED; F-PLN §3.3 + CRU OPT/SYSTEM drill-in) → ченджлог. Замечания 11–13 в `design/mcdu-button-map.md`.
+- ➡️ **ТЕКУЩАЯ: Фаза 7.3.4** — остальные активные страницы MCDU (INIT·PREFLIGHT полный, SETTINGS, PERF к контракту, DATA·SYSTEM DATA).
 - ⛔ Фазы 3–6 gated на игру (решение 2026-07-07: Фаза 7 перед 3–4; обоснование в ченджлоге).
 
 **🎮 Висит на игровом ПК (при ближайшей сессии с ED):**
@@ -52,31 +53,9 @@
 >
 > **Уже сделано в `webserver/static/`** (коммиты `eefbadd`…`ffe88d9`, детали в ченджлоге): геометрия экрана, scratchpad-input, кирилл-раскладка, PERF-страница с drag-редактором RPY, `tools/demo_mcdu_server.py` (fake-core для дев/QA).
 
-**7.3.0 — Каркас HMI-контракта (кросс-каттинг, ДО раскладки страниц): ✅ (2026-07-10)**
-- [x] 🟣 Header ровно 2 ряда на всех страницах: `setHeader()`-хелпер (титул+индикатор, muted-вариант заложен) + `AP:`/`MODE`; `OFFLINE` красным в шапке при обрыве WS (проверено реальным обрывом).
-- [x] 🔵 Scratchpad — полный контракт: `INVALID` (формат отвергнут) vs `NOT ALLOWED` (LSK без ввода) vs `NOT CONNECTED`, все ~1.5 с с сохранением ввода; `+` с физ. клавиатуры; долгий CLR (Backspace ≥600 мс) чистит всё — оба пути (window и spInput).
-- [x] 🔵 **STOP ALL** — красная кнопка в ряду slew (размер функц-клавиши) под откидной hazard-крышкой: клик-поднять → нажать; закрытие повторным кликом/кликом мимо/авто 4 с; `assist.stop_all`; с LSK R6 INIT убрана (референс утверждён пользователем, артефакт fe9038b8).
-- [x] 🔵 Annunciator LED: FUEL PRED 🟢/🟡/🔴/⚫ (пока от `fuel_percent` <10/<25; заменить на бэкенд-enum в 7.3.2), PROG 🟢/⚫ от assist engaged; приглушённые LED-тона, без мигания.
-- [x] 🔵 «Нет данных» единое: все отсутствующие значения `---` `s-muted`; OFFLINE блокирует команды через `ensureConn` → `NOT CONNECTED`; LED гаснут без связи.
-- [x] 🔵 Slew-каркас: списки листаются только ←/→ (↑/↓ зарезервированы: ↓ = возврат к активной фазе — активируется с PROG в 7.3.1; R6 NEXT PAGE на списке F-PLN — в 7.3.3 вместе с форматом 4/страницу).
+> ✅ **7.3.0–7.3.3 завершены** (HMI-контракт; PROG-фазы+PREFLIGHT+DIR; FUEL PRED; F-PLN §3.3 + CRU OPT/SYSTEM drill-in) — целиком в ченджлоге, коммиты `d988897`…`2639b9f`. Замечания 11–13 внесены в `design/mcdu-button-map.md`.
 
-**7.3.1 — PROG · фазовая страница (приоритет 1, спека §3.1): ✅ (2026-07-10)**
-- [x] 🟣 Каркас фаз DEPART↔CLIMB↔CRUISE↔APPROACH↔ARRIVAL↔LND по §3.1; boot default = PROG; LND — каркас с [план]-разметкой (валидация координат R5 работает, действия → `NOT AVAILABLE`).
-- [x] 🔵 Автоподсветка активной фазы: эвристика v1 по `ship_status`/`ap_mode` (`detectActivePhase`); просматриваемая ≠ активная — muted-индикатор; slew ↓ возвращает к активной.
-- [x] 🔵 ARRIVAL-ветка: индикатор `ARRIVAL·STN` (по умолчанию; `·PLT`-детект требует телеметрии типа цели — доделать при появлении данных), NEXT PHASE замыкает петлю через DEPART, LND доступна slew.
-- [x] 🔵 INIT → PREFLIGHT §3.2 (входы в разделы + сводка DEST/JUMPS/SHIP/FUEL/LINK, R6 `PROG>`), DIR → DIRECT-TO §3.5 [план]; старый перегруженный экран удалён (FAST TRAVEL вернётся на F-PLN в 7.3.3, `ftToggle` сохранён).
-- [x] 🔵 Бэкенд-пробелы закрыты: `ED_AP.request_action()` — очередь one-shot действий в engine-loop (undock/request_docking/dock/**enter_sc**→`sc_engage`/honk/**scoop**→`refuel_new`/fss_scan/align_target), WS-команда `action.request`, зеркало в demo FakeAP.
-
-**7.3.2 — FUEL PRED + LED (приоритет 2, спека §3.6): ✅ (2026-07-10, инлайн без субагентов)**
-- [x] 🔵 Бэкенд: `EDJournal` копит `FuelUsed` последних 10 FSDJump (`fuel_used_hist`); `get_status_dict` отдаёт `fuel_level/capacity`, `avg_fuel_per_jump`, `jumps_to_refuel` (от `RefuelThreshold`), `range_jumps`, `fuel_status` normal/warning/critical/unknown. Зеркало в demo FakeAP.
-- [x] 🔵 Страница §3.6: R1 `%·тонны`, R2 TO REFUEL, R3 AVG/JUMP, R4 RANGE, R5 порог [E] (0–100 → `INVALID`, пишет `config.set RefuelThreshold`); L1 → подстраница REFUEL SELECT (STAR THIS SYSTEM → `action scoop`, станции/точки [план] `NOT AVAILABLE`, L6 RETURN); индикатор шапки = статус.
-- [x] 🔵 LED FUEL PRED от бэкенд-enum (клиентские пороги убраны); unknown/OFFLINE → ⚫, статус НЕ critical.
-
-**7.3.3 — F-PLN приведение к контракту (приоритет 3, спека §3.3): ✅ (2026-07-11, инлайн)**
-- [x] 🔵 Список окном 4 строки; **непрерывная прокрутка вертикальным slew (↑/↓ по строке, ←/→ на окно), без NEXT PAGE** — по авиа-аналогии F-PLN (решение заказчика → замечание 12 спеки). Фикс-строка 5 (L5 `<FAST TRAVEL` [T], R5 `DEST` [V]), внизу сводка `TOTAL N JMP · X.X LY`; per-system info по левому LSK → scratchpad; правые ячейки — только [V].
-- [x] 🔵 Автообновление уже было (открытие через `setPage` + смена location в `handle`); кнопка REFRESH упразднена (осиротевший `refreshRoute` удалён); пустое состояние `NO ACTIVE ROUTE` / `PLOT ROUTE IN GALAXY MAP`, фикс-строка/NEXT PAGE скрыты.
-
-**7.3.4 — Остальные активные страницы (после приоритетных):**
+**7.3.4 — Остальные активные страницы (ТЕКУЩИЙ БЛОК):**
 - [ ] 🔵 INIT · PREFLIGHT полный (§3.2): входы в разделы L1–L5, сводка справа, R6 `PROG>`.
 - [ ] 🔵 MCDU MENU · SETTINGS (§3.9): корень + подстраницы OPTIONS / CONFIG / MAINT ⚙dev (тумблеры/тайминги по таблицам).
 - [ ] 🔵 PERF приведение к контракту (§3.7 + пункты 5–7 разбора нарушений): действия влево (SAVE SHIP L4, SAVE ALL L5), выбор точки — slew ←/→, THROTTLE R1 только [E] (цикл по нажатию убрать), drag-график сохраняется.

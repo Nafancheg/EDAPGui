@@ -100,3 +100,36 @@ ED_AP.py 4574→1527 строк; вся лётная логика в `services/`
 
 ### Дизайн MCDU: сравнение 4 вариантов и нормативная спека (2026-07-10, коммиты `84b5dd2`, `c2eb4b7`)
 - По ТЗ `design/mcdu-avionics-prompt.md` собраны 4 независимые выдачи (DeepSeek, MCDU_HMI_Spec, Grok, Claude). Сравнение по критериям ТЗ → `design/mcdu-design-comparison.md`; победитель — `design/mcdu-button-map.md` (полнота + контракт), в него влиты SCOOP NOW (CRUISE L5) и scoopable в R5. Проигравшие файлы удалены из рабочей копии (полные тексты — в коммите `84b5dd2`).
+
+---
+
+## ФАЗА 7.3 — приоритетные страницы MCDU ✅ (2026-07-10/11)
+
+> Все четыре блока делались 🔵/🎨-субагентами по нормативной спеке `design/mcdu-button-map.md`; QA — прогоны на `tools/demo_mcdu_server.py` (fake-core) + node-проверки логики + `import ED_AP`. Каждый коммит явно закрыл свой TODO.
+
+### 7.3.0 — Каркас HMI-контракта ✅ (коммит `d988897`)
+- **STOP ALL** — hardware-кнопка в ряду slew под откидной hazard-крышкой (поднять → нажать; авто-закрытие 4 с), убрана с LSK R6 INIT.
+- **Annunciator LED** на PROG (assist engaged) и FUEL PRED; приглушённые тона, без мигания (пороги 10/25% — до бэкенд-enum в 7.3.2).
+- `setHeader()` — единый header-контракт, `OFFLINE` красным.
+- **Scratchpad** — `INVALID`/`NOT ALLOWED`/`NOT CONNECTED` ~1.5 c С СОХРАНЕНИЕМ ввода; долгий CLR (≥600 мс) чистит всё; `+` с физ. клавиатуры.
+- Нет данных = `---` s-muted везде; slew: списки только ←/→, низ зарезервирован под возврат к активной фазе PROG.
+
+### 7.3.1 — PROG фазовая страница + PREFLIGHT + DIRECT-TO ✅ (коммиты `f605a55`, `4aecd02`, `4c2251c`)
+- **PROG**: 6 фаз DEPART..LND по §3.1, boot default, slew-листание, автодетект активной фазы (эвристика v1), muted-индикатор при просмотре неактивной, ARRIVAL·STN, LND-каркас [план] с валидацией координат.
+- **`ED_AP.request_action()`** — очередь one-shot действий в engine-loop (undock, request_docking, dock, enter_sc, honk, scoop, fss_scan, align_target); закрывает замечания 3 и 10 спеки; WS `action.request`.
+- INIT → PREFLIGHT (§3.2), DIR → DIRECT-TO [план] (§3.5); старый перегруженный экран удалён.
+- **Отступление от §1.3** (замечание 11): фазы Elite двунаправленны (петля ARRIVAL→DEPART, регресс из SC) → PREV/NEXT симметричны на L6/R6 (`stepPhase(delta)` с заворотом), а не пустой L6-корень. Фаза CLIMB отображается как **BOOST** (только label, id не тронут).
+
+### 7.3.2 — FUEL PRED + LED из журнала ✅ (коммит `99b7514`)
+- **EDJournal**: `fuel_used_hist` — `FuelUsed` последних 10 `FSDJump`.
+- **`get_status_dict`**: fuel_level/capacity, avg_fuel_per_jump, jumps_to_refuel (порог `RefuelThreshold`), range_jumps, `fuel_status` normal/warning/critical/unknown; зеркало в demo FakeAP.
+- **Страница FUEL PRED**: R1 %+тонны, R2 TO REFUEL, R3 AVG/JUMP, R4 RANGE, R5 порог [E] с валидацией+config.set; L1 → подстраница REFUEL SELECT (STAR THIS SYSTEM = action scoop, L6 RETURN); индикатор шапки = fuel status.
+- LED FUEL PRED теперь от бэкенд-enum (клиентские пороги убраны).
+
+### 7.3.3 — F-PLN к контракту §3.3 + доработки ✅ (коммиты `890c9f8`, `d720ba0`, `2639b9f`)
+- Список приведён к §3.3, фикс FAST TRAVEL+DEST, кнопка REFRESH упразднена (автообновление на открытии + смене location).
+- **Замечание 12** — по авиа-аналогии F-PLN стал непрерывной прокруткой (вертикальный slew, окно=строки) вместо страниц; строка `END OF PLAN` c `TOTAL N JMP · X.X LY` в конце.
+- **Замечание 13**: левый LSK строки открывает под-страницу **SYSTEM** (класс/scoop/дистанция + BODIES из `fss_body_count` + EDSM [план] Ф8.1) вместо scratchpad-инфо. Круизные настройки сведены на новую **CRU OPT** (из RAD NAV INOP): FAST TRAVEL [T], ELW SCAN [T], HONK/FSS SCAN [A] — фаза CRUISE разгружена до FSD ROUTE + SCOOP NOW. `fss_body_count` добавлен в `get_status_dict`+demo.
+- **Отложено** (Ф3/уточнение): интерлок FAST TRAVEL и scoop-skip (пересчёт топлива).
+
+**Правки спеки:** замечания 11, 12, 13 зафиксированы в `design/mcdu-button-map.md`.
