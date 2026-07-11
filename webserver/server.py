@@ -199,6 +199,18 @@ def _apply_config_side_effects(ed_ap, key: str):
         ed_ap.set_voice(bool(ed_ap.config.get("VoiceEnable")))
     elif key == "OverlayTextEnable":
         ed_ap.set_overlay(bool(ed_ap.config.get("OverlayTextEnable")))
+    elif key == "Language":
+        # core log/voice locale (OCR strings come from OCRLanguage separately)
+        ed_ap.locale.change_language(str(ed_ap.config.get("Language") or "en"))
+    elif key in ("LogDEBUG", "LogINFO"):
+        # re-derive the logger level from the flag pair (DEBUG wins over INFO,
+        # neither = ERROR) — the ED_AP setters also normalise the flags
+        if ed_ap.config.get("LogDEBUG"):
+            ed_ap.set_log_debug(True)
+        elif ed_ap.config.get("LogINFO"):
+            ed_ap.set_log_info(True)
+        else:
+            ed_ap.set_log_error(True)
 
 
 async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: dict):
@@ -266,9 +278,11 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         ed_ap.update_config()
         await ws.send_str(json.dumps({"type": "config_saved", "ok": True}))
     elif name == "config.load":
-        # SETTINGS/LOAD ALL: re-read configs/AP.json from disk, apply it to the
+        # SETTINGS/LOAD ALL: re-read configs/AP.json AND ship_configs.json from
+        # disk (the old GUI "Load All" reloaded ship configs too), apply to the
         # subclasses, and push the refreshed config to every client.
         ed_ap.load_config()
+        ed_ap.load_ship_configs()
         ed_ap.process_config_settings()
         await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
         await ws.send_str(json.dumps({"type": "config_loaded", "ok": True}))

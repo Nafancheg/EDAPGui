@@ -62,7 +62,22 @@ class FakeAP:
                        "Enable_CV_View": 0, "DebugOverlay": False,
                        "DebugOCR": False, "DebugImages": False,
                        "Key_ModDelay": 0.01, "Key_DefHoldTime": 0.2,
-                       "Key_RepeatDelay": 0.1}
+                       "Key_RepeatDelay": 0.1,
+                       # CONFIG §3.9 ext (parity gap (б)): AP numbers, game
+                       # timings, overlay layout, misc — real defaults from ED_AP
+                       "SunBrightThreshold": 125, "NavAlignTries": 3,
+                       "JumpTries": 3, "DockingRetries": 30,
+                       "WaitForAutoDockTimer": 240, "FuelScoopTimeOut": 35,
+                       "FuelThreasholdAbortAP": 10,
+                       "Wait_FSSDetect": 2.5, "Wait_DockApproach": 12.0,
+                       "Wait_ShipStop": 3.0, "Wait_OccludedReposition": 15.0,
+                       "Wait_DSSScan": 7.0, "Wait_PastSun": 12.0,
+                       "Wait_HeatDissipate": 5.0, "Wait_AfterJump": 1.0,
+                       "PlanetDepartureSCOTime": 5.0, "FCDepartureTime": 30.0,
+                       "OverlayTextXOffset": 50, "OverlayTextYOffset": 400,
+                       "OverlayTextFontSize": 14,
+                       "DSSButton": "Primary", "AutoTuneRPYRates": False,
+                       "Language": "en", "LogDEBUG": False, "LogINFO": True}
         self.nav_route = FakeNavRoute()
         self.fsd = False
         self.sc = False
@@ -128,6 +143,27 @@ class FakeAP:
     def load_config(self):
         # demo: nothing to re-read from disk (config.load)
         self.ap_ckb("log", "config loaded (demo)")
+
+    def load_ship_configs(self):
+        self.ap_ckb("log", "ship configs loaded (demo)")
+
+    # locale stub for the Language side-effect (config.set Language)
+    class _Locale:
+        def change_language(self, lang):
+            pass
+    locale = _Locale()
+
+    def set_log_error(self, enable=False):
+        self.config["LogDEBUG"] = False
+        self.config["LogINFO"] = False
+
+    def set_log_debug(self, enable=False):
+        self.config["LogDEBUG"] = True
+        self.config["LogINFO"] = False
+
+    def set_log_info(self, enable=False):
+        self.config["LogDEBUG"] = False
+        self.config["LogINFO"] = True
 
     def set_fsd_assist(self, v):
         self.fsd = v
