@@ -54,7 +54,8 @@
     curveSpeed: null,        // speed demand last received with curve data
     curveNeedsLoad: false,   // true when we should load curve data from server
     curvePending: false,     // a curve.get is in flight — don't re-send on render ticks
-    secConfirm: false        // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
+    secConfirm: false,       // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
+    lndCoords: null          // LND R5 accepted target 'lat/lon'; guidance itself is Phase 8.2
   };
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
@@ -652,7 +653,7 @@
     fill(1, { lv: '<GLIDE', lvs: 's-muted', rh: 'POS', rv: '---', rvs: 's-muted' });
     fill(2, { lv: '<SURFACE APPR', lvs: 's-muted', rh: 'HDG · BRG', rv: '---', rvs: 's-muted' });
     fill(3, { lv: '<TGT: POI', lvs: 's-muted', rh: 'DIST TO TGT', rv: '---', rvs: 's-muted' });
-    fill(4, { lv: '<FINAL DESCENT', lvs: 's-muted', rh: 'TGT COORDS', rv: '----/----', rvs: 's-cyan' });
+    fill(4, { lv: '<FINAL DESCENT', lvs: 's-muted', rh: 'TGT COORDS', rv: S.lndCoords || '----/----', rvs: 's-cyan' });
     for (var i = 0; i < 5; i++) {
       actions.L[i] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
     }
@@ -660,14 +661,21 @@
   }
 
   // LND R5: lat/lon entry per spec §3.1 — two decimals separated by '/',
-  // sign and fraction optional, lat in [-90,90], lon in [-180,180]
+  // sign and fraction optional, lat in [-90,90], lon in [-180,180]. Per the
+  // contract a valid entry is ACCEPTED and shown in the TGT COORDS cell (the
+  // scratchpad clears); the actual guidance/descent to the point is Phase 8.2.
   function lndCoordsInput(v) {
     var m = /^([+-]?\d+(?:\.\d+)?)\/([+-]?\d+(?:\.\d+)?)$/.exec(v.trim());
     if (!m) return false;
     var lat = parseFloat(m[1]), lon = parseFloat(m[2]);
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
-    flash('NOT AVAILABLE', 1500);   // valid entry; guidance backend arrives in Phase 8.2
-    return 'keep';
+    // accepted: recognised coords are shown in the R5 cell (that is the
+    // confirmation), scratchpad clears (return true). No flash() here — flash
+    // saves and later restores the scratch text, which would fight the clear.
+    // The guidance/descent to the point itself arrives in Phase 8.2.
+    S.lndCoords = m[1] + '/' + m[2];
+    render();
+    return true;
   }
 
   function renderPhaseCRUISE() {
