@@ -52,7 +52,17 @@ class FakeAP:
     def __init__(self):
         self.ap_ckb = None
         self.config = {"FastTravelMode": False, "RefuelThreshold": 65,
-                       "ElwScannerEnable": False}
+                       "ElwScannerEnable": False,
+                       # SETTINGS §3.9 keys — the real ed_ap.config has these, and
+                       # config.set rejects keys not already present, so seed them
+                       # here or the SETTINGS toggles error out in the demo.
+                       "VoiceEnable": False, "OverlayTextEnable": False,
+                       "HotkeysEnable": False, "EnableRandomness": False,
+                       "AutomaticLogout": False, "ActivateEliteEachKey": False,
+                       "Enable_CV_View": 0, "DebugOverlay": False,
+                       "DebugOCR": False, "DebugImages": False,
+                       "Key_ModDelay": 0.01, "Key_DefHoldTime": 0.2,
+                       "Key_RepeatDelay": 0.1}
         self.nav_route = FakeNavRoute()
         self.fsd = False
         self.sc = False

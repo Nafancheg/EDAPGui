@@ -389,6 +389,88 @@
     if (sendRaw({ cmd: 'config.set', key: 'ElwScannerEnable', value: nv })) S.cfg.ElwScannerEnable = nv;
     render();
   }
+
+  // MCDU MENU · SETTINGS toggles, spec §3.9. Each writes straight through
+  // config.set — the backend already applies the effect live.
+  function voiceToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.VoiceEnable;
+    if (sendRaw({ cmd: 'config.set', key: 'VoiceEnable', value: nv })) S.cfg.VoiceEnable = nv;
+    render();
+  }
+  function overlayToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.OverlayTextEnable;
+    if (sendRaw({ cmd: 'config.set', key: 'OverlayTextEnable', value: nv })) S.cfg.OverlayTextEnable = nv;
+    render();
+  }
+  function hotkeysToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.HotkeysEnable;
+    if (sendRaw({ cmd: 'config.set', key: 'HotkeysEnable', value: nv })) S.cfg.HotkeysEnable = nv;
+    render();
+  }
+  function randomnessToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.EnableRandomness;
+    if (sendRaw({ cmd: 'config.set', key: 'EnableRandomness', value: nv })) S.cfg.EnableRandomness = nv;
+    render();
+  }
+  function autoLogoutToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.AutomaticLogout;
+    if (sendRaw({ cmd: 'config.set', key: 'AutomaticLogout', value: nv })) S.cfg.AutomaticLogout = nv;
+    render();
+  }
+  function actEliteToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.ActivateEliteEachKey;
+    if (sendRaw({ cmd: 'config.set', key: 'ActivateEliteEachKey', value: nv })) S.cfg.ActivateEliteEachKey = nv;
+    render();
+  }
+  // Enable_CV_View is an int 0/1 flag on the backend, not a bool — send/store 1/0.
+  function cvViewToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.Enable_CV_View;
+    if (sendRaw({ cmd: 'config.set', key: 'Enable_CV_View', value: nv ? 1 : 0 })) S.cfg.Enable_CV_View = nv ? 1 : 0;
+    render();
+  }
+  function dbgOverlayToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.DebugOverlay;
+    if (sendRaw({ cmd: 'config.set', key: 'DebugOverlay', value: nv })) S.cfg.DebugOverlay = nv;
+    render();
+  }
+  function dbgOcrToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.DebugOCR;
+    if (sendRaw({ cmd: 'config.set', key: 'DebugOCR', value: nv })) S.cfg.DebugOCR = nv;
+    render();
+  }
+  function dbgImagesToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.DebugImages;
+    if (sendRaw({ cmd: 'config.set', key: 'DebugImages', value: nv })) S.cfg.DebugImages = nv;
+    render();
+  }
+  // shared [E] input handler factory for the MAINT float settings (§3.9):
+  // accepts a non-negative number, rejects anything else with INVALID.
+  function floatCfgInput(key) {
+    return function (v) {
+      var n = v.trim();
+      if (!/^\d*\.?\d+$/.test(n)) return false;
+      var val = parseFloat(n);
+      if (isNaN(val) || val < 0) return false;
+      if (!ensureConn()) return 'keep';
+      if (sendRaw({ cmd: 'config.set', key: key, value: val })) {
+        S.cfg[key] = val;
+        render();
+        return true;
+      }
+      return 'keep';
+    };
+  }
+
   function throttlePreset(lvl) {
     if (!ensureConn()) return;
     if (sendRaw({ cmd: 'throttle.set', level: lvl })) S.throttle = lvl;
@@ -656,10 +738,10 @@
     actions.L[2] = { press: function () { setPage('PERF'); }, input: null };
     fill(3, { lv: '<DATA', lvs: 's-normal', rh: 'FUEL', rv: f.t, rvs: f.s });
     actions.L[3] = { press: function () { setPage('DATA'); }, input: null };
-    fill(4, { lv: '<SETTINGS', lvs: 's-muted',
+    fill(4, { lv: '<SETTINGS', lvs: 's-normal',
       rh: 'LINK', rv: S.connected ? 'CONNECTED' : 'OFFLINE',
       rvs: S.connected ? 's-on' : 's-alert' });
-    actions.L[4] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
+    actions.L[4] = { press: function () { setPage('SETTINGS'); }, input: null };
     fill(5, { rv: 'PROG>', rvs: 's-cyan' });
     actions.R[5] = { press: function () { setPage('PROG'); }, input: null };
   }
@@ -950,6 +1032,126 @@
     actions.R[5] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
   }
 
+  // MCDU MENU · SETTINGS root, spec §3.9. Reached from the MCDU MENU
+  // hardware key; L1-L3 drill into OPTIONS/CONFIG/MAINT sub-pages. LOAD ALL
+  // / SAVE ALL are [план] — no backend command yet.
+  function renderSETTINGS() {
+    setHeader('MCDU MENU', 'SETTINGS');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    fill(0, { lv: '<OPTIONS', lvs: 's-normal',
+      rh: 'CORE', rv: S.connected ? 'CONNECTED' : 'OFFLINE',
+      rvs: S.connected ? 's-on' : 's-alert' });
+    actions.L[0] = { press: function () { setPage('OPTIONS'); }, input: null };
+
+    fill(1, { lv: '<CONFIG', lvs: 's-normal',
+      rh: 'GAME', rv: '---', rvs: 's-muted' });
+    actions.L[1] = { press: function () { setPage('CFG'); }, input: null };
+
+    fill(2, { lv: '<MAINT', lvs: 's-normal' });
+    actions.L[2] = { press: function () { setPage('MAINT'); }, input: null };
+
+    fill(3, { lv: '<LOAD ALL', lvs: 's-normal' });
+    actions.L[3] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(4, { lv: '<SAVE ALL', lvs: 's-normal' });
+    actions.L[4] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+  }
+
+  // MCDU MENU · OPTIONS sub-page, spec §3.9. Persistent behaviour toggles.
+  function renderOPTIONS() {
+    setHeader('OPTIONS', 'SETTINGS');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var voiceOn = !!S.cfg.VoiceEnable;
+    fill(0, { lv: voiceOn ? '<VOICE  ON' : '<VOICE  OFF', lvs: voiceOn ? 's-on' : 's-off' });
+    actions.L[0] = { press: voiceToggle, input: null };
+
+    var overlayOn = !!S.cfg.OverlayTextEnable;
+    fill(1, { lv: overlayOn ? '<OVERLAY  ON' : '<OVERLAY  OFF', lvs: overlayOn ? 's-on' : 's-off' });
+    actions.L[1] = { press: overlayToggle, input: null };
+
+    var hotkeysOn = !!S.cfg.HotkeysEnable;
+    fill(2, { lv: hotkeysOn ? '<HOTKEYS  ON' : '<HOTKEYS  OFF', lvs: hotkeysOn ? 's-on' : 's-off' });
+    actions.L[2] = { press: hotkeysToggle, input: null };
+
+    var randOn = !!S.cfg.EnableRandomness;
+    fill(3, { lv: randOn ? '<RANDOMNESS  ON' : '<RANDOMNESS  OFF', lvs: randOn ? 's-on' : 's-off' });
+    actions.L[3] = { press: randomnessToggle, input: null };
+
+    var logoutOn = !!S.cfg.AutomaticLogout;
+    fill(4, { lv: logoutOn ? '<AUTO LOGOUT  ON' : '<AUTO LOGOUT  OFF', lvs: logoutOn ? 's-on' : 's-off' });
+    actions.L[4] = { press: autoLogoutToggle, input: null };
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+  }
+
+  // MCDU MENU · CONFIG sub-page, spec §3.9. RELOAD BINDINGS / AUTO-ASSIGN
+  // KEYS / REFRESH GAME SET are [план] — no backend command yet.
+  function renderCFG() {
+    setHeader('CONFIG', 'SETTINGS');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var eliteOn = !!S.cfg.ActivateEliteEachKey;
+    fill(0, { lv: eliteOn ? '<ACT-ELITE KEY  ON' : '<ACT-ELITE KEY  OFF', lvs: eliteOn ? 's-on' : 's-off' });
+    actions.L[0] = { press: actEliteToggle, input: null };
+
+    fill(1, { lv: '<RELOAD BINDINGS', lvs: 's-normal', rh: 'BINDS', rv: '---', rvs: 's-muted' });
+    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(2, { lv: '<AUTO-ASSIGN KEYS', lvs: 's-normal' });
+    actions.L[2] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(3, { lv: '<REFRESH GAME SET', lvs: 's-normal' });
+    actions.L[3] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+  }
+
+  // MCDU MENU · MAINT sub-page (dev/debug), spec §3.9. CV VIEW is an int 0/1
+  // flag on the backend, not a bool — toggle sends/stores 1/0.
+  function renderMAINT() {
+    setHeader('MAINT', 'DEV');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var cvOn = !!S.cfg.Enable_CV_View;
+    var md = S.cfg.Key_ModDelay;
+    fill(0, { lv: cvOn ? '<CV VIEW  ON' : '<CV VIEW  OFF', lvs: cvOn ? 's-on' : 's-off',
+      rh: 'MOD DELAY', rv: (md === null || md === undefined) ? '---' : Number(md).toFixed(2) + ' S',
+      rvs: (md === null || md === undefined) ? 's-muted' : 's-cyan' });
+    actions.L[0] = { press: cvViewToggle, input: null };
+    actions.R[0] = { press: null, input: floatCfgInput('Key_ModDelay') };
+
+    var dbgOverlayOn = !!S.cfg.DebugOverlay;
+    var dh = S.cfg.Key_DefHoldTime;
+    fill(1, { lv: dbgOverlayOn ? '<DBG OVERLAY  ON' : '<DBG OVERLAY  OFF', lvs: dbgOverlayOn ? 's-on' : 's-off',
+      rh: 'DEF HOLD', rv: (dh === null || dh === undefined) ? '---' : Number(dh).toFixed(2) + ' S',
+      rvs: (dh === null || dh === undefined) ? 's-muted' : 's-cyan' });
+    actions.L[1] = { press: dbgOverlayToggle, input: null };
+    actions.R[1] = { press: null, input: floatCfgInput('Key_DefHoldTime') };
+
+    var dbgOcrOn = !!S.cfg.DebugOCR;
+    var rd = S.cfg.Key_RepeatDelay;
+    fill(2, { lv: dbgOcrOn ? '<DBG OCR  ON' : '<DBG OCR  OFF', lvs: dbgOcrOn ? 's-on' : 's-off',
+      rh: 'REPEAT DLY', rv: (rd === null || rd === undefined) ? '---' : Number(rd).toFixed(2) + ' S',
+      rvs: (rd === null || rd === undefined) ? 's-muted' : 's-cyan' });
+    actions.L[2] = { press: dbgOcrToggle, input: null };
+    actions.R[2] = { press: null, input: floatCfgInput('Key_RepeatDelay') };
+
+    var dbgImgOn = !!S.cfg.DebugImages;
+    fill(3, { lv: dbgImgOn ? '<DBG IMAGES  ON' : '<DBG IMAGES  OFF', lvs: dbgImgOn ? 's-on' : 's-off' });
+    actions.L[3] = { press: dbgImagesToggle, input: null };
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+  }
+
   function renderPERF() {
     setHeader('RPY CURVES', 'PERF');
     clearActions();
@@ -1123,7 +1325,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -1178,13 +1380,18 @@
     else if (S.page === 'CRUOPT') renderCRUOPT();
     else if (S.page === 'SYSINFO') renderSYSINFO();
     else if (S.page === 'DATA') renderDATA();
+    else if (S.page === 'SETTINGS') renderSETTINGS();
+    else if (S.page === 'OPTIONS') renderOPTIONS();
+    else if (S.page === 'CFG') renderCFG();
+    else if (S.page === 'MAINT') renderMAINT();
     else renderINIT();
 
     // show/hide curve panel
     if (S.page !== 'PERF') hideCurvePanel();
 
     // highlight active function key (sub-pages light their parent key)
-    var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' : S.page;
+    var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' :
+      (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT') ? 'SETTINGS' : S.page;
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
       b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === pageKey);
