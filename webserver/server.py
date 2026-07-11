@@ -22,6 +22,19 @@ log = logging.getLogger("edap.webserver")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+# OCR calibration editor store (web replacement for the tkinter Calibration
+# tab). Lazy singleton: created on first calibration.* command so importing
+# this module never touches configs/ocr_calibration.json.
+_calib_store = None
+
+
+def _get_calib_store():
+    global _calib_store
+    if _calib_store is None:
+        from CalibrationStore import CalibrationStore
+        _calib_store = CalibrationStore()
+    return _calib_store
+
 SCOOPABLE_CLASSES = {"K", "G", "B", "F", "O", "A", "M"}
 
 
@@ -286,6 +299,49 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         ed_ap.process_config_settings()
         await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
         await ws.send_str(json.dumps({"type": "config_loaded", "ok": True}))
+    elif name == "calibration.get":
+        await ws.send_str(json.dumps({"type": "calibration", "data": _get_calib_store().snapshot()}))
+    elif name == "calibration.set_rect":
+        err = _get_calib_store().set_rect(cmd.get("key"), cmd.get("rect"))
+        if err:
+            await ws.send_str(json.dumps({"type": "error", "text": err}))
+        else:
+            await ws.send_str(json.dumps({"type": "calibration", "data": _get_calib_store().snapshot()}))
+    elif name == "calibration.preview":
+        # draws the region quad on the game overlay — feedback is on the game
+        # monitor, the client only gets ok/error
+        err = _get_calib_store().preview(ed_ap, cmd.get("key"))
+        if err:
+            await ws.send_str(json.dumps({"type": "error", "text": err}))
+        else:
+            await ws.send_str(json.dumps({"type": "calib_preview", "ok": True, "key": cmd.get("key")}))
+    elif name == "calibration.save":
+        _get_calib_store().save(ap_ckb=getattr(ed_ap, "ap_ckb", None))
+        await ws.send_str(json.dumps({"type": "calib_saved", "ok": True}))
+    elif name == "calibration.reset":
+        _get_calib_store().reset(ap_ckb=getattr(ed_ap, "ap_ckb", None))
+        await broadcaster.broadcast({"type": "calibration", "data": _get_calib_store().snapshot()})
+        await ws.send_str(json.dumps({"type": "calib_reset", "ok": True}))
+    elif name == "calibration.calibrate_target":
+        # long blocking scale-sweep against the live game screen — run it off
+        # the event loop; progress arrives via the ap_ckb('log') bridge
+        run = getattr(ed_ap, "run_calibrate_target", None)
+        if run is None:
+            await ws.send_str(json.dumps({"type": "error", "text": "calibrate_target not supported by this core"}))
+        else:
+            loop = asyncio.get_running_loop()
+            fut = loop.run_in_executor(None, run)
+
+            def _done(f, _bc=broadcaster):
+                exc = f.exception()
+                payload = {"type": "calib_target_done", "ok": exc is None}
+                if exc is not None:
+                    payload["text"] = str(exc)
+                    log.warning("calibrate_target failed: %s", exc)
+                asyncio.ensure_future(_bc.broadcast(payload))
+
+            fut.add_done_callback(_done)
+            await ws.send_str(json.dumps({"type": "calib_target_started"}))
     elif name == "route.get":
         data = ed_ap.nav_route.get_nav_route_data()
         await ws.send_str(json.dumps({"type": "route", "data": map_nav_route(data)}))

@@ -828,13 +828,20 @@ class EDAutopilot:
         return scale, max_pick
 
     def calibrate_target(self):
-        """ Routine to find the optimal scaling values for the template images. """
+        """ Routine to find the optimal scaling values for the template images.
+        GUI entry point: confirmation dialog, then the run. The web UI does its
+        own confirm step and calls run_calibrate_target() directly. """
         msg = 'Select OK to begin Calibration. You must be in space and have a star system targeted in center screen.'
         self.vce.say(msg)
         ans = messagebox.askokcancel('Calibration', msg)
         if not ans:
             return
 
+        self.run_calibrate_target()
+
+    def run_calibrate_target(self):
+        """ The calibration run itself (no UI dialog) — blocking, call off the
+        event loop. Progress/result is reported through ap_ckb('log'). """
         self.ap_ckb('log+vce', 'Calibration starting.')
 
         set_focus_elite_window()

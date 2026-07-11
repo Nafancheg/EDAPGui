@@ -8,6 +8,7 @@ import asyncio
 import itertools
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -164,6 +165,21 @@ class FakeAP:
     def set_log_info(self, enable=False):
         self.config["LogDEBUG"] = False
         self.config["LogINFO"] = True
+
+    # calibration support (calibration.* commands). The store itself works on
+    # the real configs/ocr_calibration.json (gitignored); the demo only stubs
+    # the game-facing bits: the overlay preview and the calibrate run.
+    class _Overlay:
+        def overlay_quad_pct(self, name, quad, color, thick, ttl):
+            pass
+        def overlay_paint(self):
+            pass
+    overlay = _Overlay()
+
+    def run_calibrate_target(self):
+        self.ap_ckb("log", "Calibration starting (demo).")
+        time.sleep(1.0)
+        self.ap_ckb("log", "Target Cal: Best match: 0.9123(%) at scale: 1.0500 (demo)")
 
     def set_fsd_assist(self, v):
         self.fsd = v
