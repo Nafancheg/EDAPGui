@@ -198,6 +198,12 @@
         flash(msg.ok ? 'SAVED TO DISK' : 'SAVE FAILED', 1800);
         if (!msg.ok && msg.text) appendLog('[config] ' + msg.text, false, true);
         break;
+      case 'config_saved':
+        flash(msg.ok ? 'SETTINGS SAVED' : 'SAVE FAILED', 1800);
+        break;
+      case 'config_loaded':
+        flash('SETTINGS LOADED', 1800);
+        break;
       default:
         break;
     }
@@ -1123,10 +1129,10 @@
     actions.L[3] = { press: function () { setPage('TUNING'); }, input: null };
 
     fill(4, { lv: '<LOAD ALL', lvs: 's-normal' });
-    actions.L[4] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    actions.L[4] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'config.load' }); }, input: null };
 
     fill(5, { lv: '<SAVE ALL', lvs: 's-normal' });
-    actions.L[5] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    actions.L[5] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'config.save' }); }, input: null };
   }
 
   // MCDU MENU · OPTIONS sub-page, spec §3.9. Persistent behaviour toggles.

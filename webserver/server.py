@@ -259,6 +259,19 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
             await ws.send_str(json.dumps({
                 "type": "ship_saved", "ok": False,
                 "text": f"not saved: no ship detected (current type: {ed_ap.current_ship_type!r})"}))
+    elif name == "config.save":
+        # SETTINGS/SAVE ALL: persist the in-memory config to configs/AP.json.
+        # config.set only mutates ed_ap.config in memory; this is what writes
+        # the web-side toggle changes to disk so they survive a restart.
+        ed_ap.update_config()
+        await ws.send_str(json.dumps({"type": "config_saved", "ok": True}))
+    elif name == "config.load":
+        # SETTINGS/LOAD ALL: re-read configs/AP.json from disk, apply it to the
+        # subclasses, and push the refreshed config to every client.
+        ed_ap.load_config()
+        ed_ap.process_config_settings()
+        await broadcaster.broadcast({"type": "config", "data": dict(ed_ap.config)})
+        await ws.send_str(json.dumps({"type": "config_loaded", "ok": True}))
     elif name == "route.get":
         data = ed_ap.nav_route.get_nav_route_data()
         await ws.send_str(json.dumps({"type": "route", "data": map_nav_route(data)}))

@@ -121,6 +121,14 @@ class FakeAP:
     def process_config_settings(self):
         self.ap_ckb("log", "config applied")
 
+    def update_config(self):
+        # demo: no disk write, just acknowledge (config.save)
+        self.ap_ckb("log", "config saved (demo)")
+
+    def load_config(self):
+        # demo: nothing to re-read from disk (config.load)
+        self.ap_ckb("log", "config loaded (demo)")
+
     def set_fsd_assist(self, v):
         self.fsd = v
         self.ap_ckb("log", f"FSD assist -> {v}")
