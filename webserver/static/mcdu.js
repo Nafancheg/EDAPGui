@@ -53,7 +53,8 @@
     curveEditor: null,       // McduCurves instance
     curveSpeed: null,        // speed demand last received with curve data
     curveNeedsLoad: false,   // true when we should load curve data from server
-    curvePending: false      // a curve.get is in flight — don't re-send on render ticks
+    curvePending: false,     // a curve.get is in flight — don't re-send on render ticks
+    secConfirm: false        // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
   };
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
@@ -85,6 +86,7 @@
   // ---- WebSocket ----
   var ws = null;
   var reconnectT = null;
+  var secConfirmT = null;   // SEC F-PLN ACTIVATE SEC confirm-window timeout id
 
   function wsURL() {
     return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
@@ -744,6 +746,9 @@
     actions.R[5] = { press: function () { setPage('PROG'); }, input: null };
   }
 
+  // DIR · DIRECT-TO, spec §3.5. [план] — no direct-to plotter until Phase 8.1;
+  // every action replies NOT AVAILABLE. R3 (candidate class · distance) is a
+  // static [план] row; it has no backing data yet, only the slot.
   function renderDIR() {
     setHeader('DIR', 'DIRECT-TO');
     clearActions();
@@ -755,6 +760,7 @@
     fill(1, { lv: '<NEAREST SYSTEM', lvs: 's-muted',
       rh: 'CAND', rv: '---', rvs: 's-muted' });
     actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    fill(2, { rv: '---  · --- LY', rvs: 's-muted' });
     fill(3, { lv: 'DIRECT-TO PLOTTER', lvs: 's-muted', center: true });
     fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint', center: true });
   }
@@ -763,6 +769,69 @@
     if (!v.trim()) return false;
     flash('NOT AVAILABLE', 1500);   // plotter backend arrives in Phase 8.1
     return 'keep';
+  }
+
+  // SEC F-PLN · SECONDARY ROUTE, spec §3.4. [план] — no secondary-route
+  // plotter until Phase 8.1; every action replies NOT AVAILABLE. L3 <ACTIVATE
+  // SEC still implements the real two-step press>CONFIRM?>press UI required
+  // by §3.4, even though the second press has nothing to swap to yet.
+  function renderSEC() {
+    setHeader('SEC F-PLN', 'SECONDARY ROUTE');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    fill(0, { lv: '<PLOT FUEL-SAFE', lvs: 's-muted',
+      rh: 'SEC DEST', rv: '________', rvs: 's-cyan' });
+    actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    actions.R[0] = { press: null, input: secDestInput };
+
+    fill(1, { lv: '<PLOT FAST/RISKY', lvs: 's-muted',
+      rh: 'JUMPS', rv: 'P --- / S ---', rvs: 's-muted' });
+    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    fill(2, {
+      lv: S.secConfirm ? '<ACTIVATE SEC  CONFIRM?' : '<ACTIVATE SEC',
+      lvs: S.secConfirm ? 's-alert' : 's-muted',
+      rh: 'DIST', rv: 'P --- / S --- LY', rvs: 's-muted'
+    });
+    actions.L[2] = { press: secActivatePress, input: null };
+
+    fill(3, { lv: 'SEC ROUTE PLOTTER', lvs: 's-hint',
+      rh: 'SCOOPS', rv: 'P --- / S ---', rvs: 's-muted' });
+
+    fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint',
+      rh: 'RISK', rv: '---', rvs: 's-muted' });
+    // row 5 (L6/R6) stays empty — SEC is a root page (spec §1.3: no RETURN)
+    // and there is no secondary data to page through yet.
+  }
+
+  function secDestInput(v) {
+    if (!v.trim()) return false;
+    flash('NOT AVAILABLE', 1500);   // plotter backend arrives in Phase 8.1
+    return 'keep';
+  }
+
+  // Two-step confirm per §3.4: 1st press arms a 5s confirm window (label
+  // flips to CONFIRM?); 2nd press within the window would swap in the
+  // secondary route, but the plotter doesn't exist yet, so it just replies
+  // NOT AVAILABLE and disarms. The window auto-disarms on timeout, and
+  // setPage() disarms it on leaving the SEC page so CONFIRM? never sticks.
+  function secActivatePress() {
+    if (S.secConfirm) {
+      if (secConfirmT) { clearTimeout(secConfirmT); secConfirmT = null; }
+      S.secConfirm = false;
+      flash('NOT AVAILABLE', 1500);
+      render();
+      return;
+    }
+    S.secConfirm = true;
+    if (secConfirmT) clearTimeout(secConfirmT);
+    secConfirmT = setTimeout(function () {
+      secConfirmT = null;
+      S.secConfirm = false;
+      if (S.page === 'SEC') render();
+    }, 5000);
+    render();
   }
 
   // F-PLN · ACTIVE ROUTE, spec §3.3 + Замечания 12/13: the whole plan is one
@@ -1325,7 +1394,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'SEC F-PLN': 'SEC', 'FUEL PRED': 'FUEL', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -1377,6 +1446,7 @@
     else if (S.page === 'FUEL_SEL') renderFUELSEL();
     else if (S.page === 'TUNING') renderTUNING();
     else if (S.page === 'DIR') renderDIR();
+    else if (S.page === 'SEC') renderSEC();
     else if (S.page === 'CRUOPT') renderCRUOPT();
     else if (S.page === 'SYSINFO') renderSYSINFO();
     else if (S.page === 'DATA') renderDATA();
@@ -1413,6 +1483,10 @@
   function setPage(p) {
     if (S.page === p) return;
     if (S.page === 'TUNING') hideCurvePanel();
+    if (S.page === 'SEC' && S.secConfirm) {
+      if (secConfirmT) { clearTimeout(secConfirmT); secConfirmT = null; }
+      S.secConfirm = false;
+    }
     S.page = p;
     if (p === 'ROUTE' || p === 'INIT' || p === 'DATA') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
     if (p === 'TUNING') S.curveNeedsLoad = true;
