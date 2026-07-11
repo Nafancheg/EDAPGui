@@ -654,8 +654,8 @@
       rh: 'SHIP', rv: snap.ship_status ? String(snap.ship_status) : '---',
       rvs: snap.ship_status ? 's-normal' : 's-muted' });
     actions.L[2] = { press: function () { setPage('PERF'); }, input: null };
-    fill(3, { lv: '<DATA', lvs: 's-muted', rh: 'FUEL', rv: f.t, rvs: f.s });
-    actions.L[3] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
+    fill(3, { lv: '<DATA', lvs: 's-normal', rh: 'FUEL', rv: f.t, rvs: f.s });
+    actions.L[3] = { press: function () { setPage('DATA'); }, input: null };
     fill(4, { lv: '<SETTINGS', lvs: 's-muted',
       rh: 'LINK', rv: S.connected ? 'CONNECTED' : 'OFFLINE',
       rvs: S.connected ? 's-on' : 's-alert' });
@@ -912,6 +912,44 @@
     setPage('SYSINFO');
   }
 
+  // DATA · SYSTEM DATA, spec §3.8: reference readout for the current system —
+  // system, arrival star, scan/EDSM summaries. EDSM fetch and the scan/EDSM
+  // summary rows are [план] until the backend lands in Phase 8.1, shown as
+  // muted NO DATA / a NOT AVAILABLE flash until then. Reached only from INIT
+  // L4 (sub-page of PREFLIGHT), so L6 returns there like SYSINFO returns to ROUTE.
+  function renderDATA() {
+    setHeader('DATA', 'SYSTEM DATA');
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var loc = S.snap.location ? String(S.snap.location) : null;
+    var locLower = loc ? loc.toLowerCase() : null;
+    var sys = S.route.systems || [];
+    var cur = null;
+    for (var si = 0; si < sys.length; si++) {
+      if (sys[si].system && locLower && String(sys[si].system).toLowerCase() === locLower) {
+        cur = sys[si];
+        break;
+      }
+    }
+
+    fill(0, { lv: '<EDSM FETCH', lvs: 's-normal',
+      rh: 'SYSTEM', rv: loc || '---', rvs: loc ? 's-normal' : 's-muted' });
+    actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+
+    var starVal = cur && cur.star_class
+      ? cur.star_class + ' ' + (cur.scoopable ? 'SCOOP' : '✗') : '---';
+    fill(1, { rh: 'STAR', rv: starVal,
+      rvs: (cur && cur.star_class) ? (cur.scoopable ? 's-on' : 's-alert') : 's-muted' });
+
+    fill(2, { rh: 'SCANS', rv: 'NO DATA', rvs: 's-muted' });
+    fill(3, { rh: 'EDSM', rv: 'NO DATA', rvs: 's-muted' });
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal', rv: 'NEXT PAGE>', rvs: 's-muted' });
+    actions.L[5] = { press: function () { setPage('INIT'); }, input: null };
+    actions.R[5] = { press: function () { flash('PAGE INOP', 1500); }, input: null };
+  }
+
   function renderPERF() {
     setHeader('RPY CURVES', 'PERF');
     clearActions();
@@ -1085,7 +1123,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'FUEL PRED': 'FUEL', 'PERF': 'PERF', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -1139,6 +1177,7 @@
     else if (S.page === 'DIR') renderDIR();
     else if (S.page === 'CRUOPT') renderCRUOPT();
     else if (S.page === 'SYSINFO') renderSYSINFO();
+    else if (S.page === 'DATA') renderDATA();
     else renderINIT();
 
     // show/hide curve panel
@@ -1168,7 +1207,7 @@
     if (S.page === p) return;
     if (S.page === 'PERF') hideCurvePanel();
     S.page = p;
-    if (p === 'ROUTE' || p === 'INIT') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
+    if (p === 'ROUTE' || p === 'INIT' || p === 'DATA') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
     if (p === 'PERF') S.curveNeedsLoad = true;
     render();
   }
