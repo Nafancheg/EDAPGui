@@ -43,6 +43,7 @@
     fastTravel: false,
     connected: false,
     routePage: 0,           // top line index of the F-PLN scroll window
+    cfgPage: 0,              // CONFIG sub-page index 0-4, parity-gap ext. (7.4б)
     sysInfoIdx: null,        // route system index open on the SYSINFO sub-page
     statusline: '',
     routeLoc: null,          // location last used to refresh the route
@@ -478,6 +479,71 @@
       }
       return 'keep';
     };
+  }
+
+  // shared [E] input handler factory for integer config settings (CONFIG
+  // 2/5-3/5, parity-gap ext. 7.4б): a plain non-negative integer, optionally
+  // clamped to [min, max] (max omitted = unbounded), INVALID otherwise.
+  function intCfgInput(key, min, max) {
+    return function (v) {
+      var n = v.trim();
+      if (!/^\d+$/.test(n)) return false;
+      var val = parseInt(n, 10);
+      if (val < min || (max !== undefined && val > max)) return false;
+      if (!ensureConn()) return 'keep';
+      if (sendRaw({ cmd: 'config.set', key: key, value: val })) {
+        S.cfg[key] = val;
+        render();
+        return true;
+      }
+      return 'keep';
+    };
+  }
+
+  // format a CONFIG numeric cell: '---' muted when unset, else fmt(v) cyan.
+  // fmt defaults to a plain String() when omitted.
+  function cfgNumCell(v, fmt) {
+    if (v === null || v === undefined) return { rv: '---', rvs: 's-muted' };
+    return { rv: fmt ? fmt(v) : String(v), rvs: 's-cyan' };
+  }
+
+  // CONFIG 2/5 toggles/cycles (parity-gap ext. 7.4б).
+  function dssButtonToggle() {
+    if (!ensureConn()) return;
+    var nv = (S.cfg.DSSButton === 'Secondary') ? 'Primary' : 'Secondary';
+    if (sendRaw({ cmd: 'config.set', key: 'DSSButton', value: nv })) S.cfg.DSSButton = nv;
+    render();
+  }
+  function autoTuneToggle() {
+    if (!ensureConn()) return;
+    var nv = !S.cfg.AutoTuneRPYRates;
+    if (sendRaw({ cmd: 'config.set', key: 'AutoTuneRPYRates', value: nv })) S.cfg.AutoTuneRPYRates = nv;
+    render();
+  }
+  var CFG_LANGUAGES = ['en', 'de', 'es', 'fr', 'ru'];
+  function languageToggle() {
+    if (!ensureConn()) return;
+    var cur = String(S.cfg.Language || 'en').toLowerCase();
+    var nv = CFG_LANGUAGES[(CFG_LANGUAGES.indexOf(cur) + 1) % CFG_LANGUAGES.length];
+    if (sendRaw({ cmd: 'config.set', key: 'Language', value: nv })) S.cfg.Language = nv;
+    render();
+  }
+  // ERROR -> INFO -> DEBUG -> ERROR, one config.set per step (the backend
+  // normalises the LogDEBUG/LogINFO pair off that single key — see
+  // _apply_config_side_effects in webserver/server.py). Predict both flags
+  // locally to the level's target state so the label updates immediately
+  // instead of waiting for the config broadcast round-trip.
+  function logLevelToggle() {
+    if (!ensureConn()) return;
+    var lvl = S.cfg.LogDEBUG ? 'DEBUG' : (S.cfg.LogINFO ? 'INFO' : 'ERROR');
+    var key, val, tgtDebug, tgtInfo;
+    if (lvl === 'ERROR') { key = 'LogINFO'; val = true; tgtDebug = false; tgtInfo = true; }
+    else if (lvl === 'INFO') { key = 'LogDEBUG'; val = true; tgtDebug = true; tgtInfo = false; }
+    else { key = 'LogDEBUG'; val = false; tgtDebug = false; tgtInfo = false; }
+    if (sendRaw({ cmd: 'config.set', key: key, value: val })) {
+      S.cfg.LogDEBUG = tgtDebug; S.cfg.LogINFO = tgtInfo;
+    }
+    render();
   }
 
   function throttlePreset(lvl) {
@@ -1173,13 +1239,31 @@
     actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
   }
 
-  // MCDU MENU · CONFIG sub-page, spec §3.9. RELOAD BINDINGS / AUTO-ASSIGN
-  // KEYS / REFRESH GAME SET are [план] — no backend command yet.
+  // MCDU MENU · CONFIG sub-page, spec §3.9 + parity-gap extension (7.4б,
+  // Замечание 16 — docs/tkinter_parity_audit.md §(б)). Now 5 pages: 1/5 is
+  // the original bindings page (RELOAD BINDINGS / AUTO-ASSIGN KEYS / REFRESH
+  // GAME SET are still [план] — no backend command yet); 2/5-5/5 add
+  // settings ported from the tkinter GUI that had no web equivalent. R6
+  // NEXT PAGE> and slew ←/→ cycle 1..5; L6 RETURN always goes to SETTINGS
+  // regardless of which CONFIG page is open.
   function renderCFG() {
-    setHeader('CONFIG', 'SETTINGS');
+    setHeader('CONFIG', (S.cfgPage + 1) + '/5 →');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
+    if (S.cfgPage === 1) renderCFG2();
+    else if (S.cfgPage === 2) renderCFG3();
+    else if (S.cfgPage === 3) renderCFG4();
+    else if (S.cfgPage === 4) renderCFG5();
+    else renderCFG1();
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal', rv: 'NEXT PAGE>', rvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+    actions.R[5] = { press: function () { S.cfgPage = (S.cfgPage + 1) % 5; render(); }, input: null };
+  }
+
+  // CONFIG 1/5 — key bindings (unchanged from the pre-7.4б single page).
+  function renderCFG1() {
     var eliteOn = !!S.cfg.ActivateEliteEachKey;
     fill(0, { lv: eliteOn ? '<ACT-ELITE KEY  ON' : '<ACT-ELITE KEY  OFF', lvs: eliteOn ? 's-on' : 's-off' });
     actions.L[0] = { press: actEliteToggle, input: null };
@@ -1192,9 +1276,94 @@
 
     fill(3, { lv: '<REFRESH GAME SET', lvs: 's-normal' });
     actions.L[3] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+  }
 
-    fill(5, { lv: '<RETURN', lvs: 's-normal' });
-    actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+  // CONFIG 2/5 — AP behaviour (parity-gap ext. 7.4б).
+  function renderCFG2() {
+    var dssSecondary = S.cfg.DSSButton === 'Secondary';
+    var sb = cfgNumCell(S.cfg.SunBrightThreshold);
+    fill(0, { lv: '<DSS BTN  ' + (dssSecondary ? 'SECONDARY' : 'PRIMARY'), lvs: 's-cyan',
+      rh: 'SUN BRIGHT', rv: sb.rv, rvs: sb.rvs });
+    actions.L[0] = { press: dssButtonToggle, input: null };
+    actions.R[0] = { press: null, input: intCfgInput('SunBrightThreshold', 0, 255) };
+
+    var tuneOn = !!S.cfg.AutoTuneRPYRates;
+    var nat = cfgNumCell(S.cfg.NavAlignTries);
+    fill(1, { lv: tuneOn ? '<AUTO TUNE RPY  ON' : '<AUTO TUNE RPY  OFF', lvs: tuneOn ? 's-on' : 's-off',
+      rh: 'NAV ALIGN TRIES', rv: nat.rv, rvs: nat.rvs });
+    actions.L[1] = { press: autoTuneToggle, input: null };
+    actions.R[1] = { press: null, input: intCfgInput('NavAlignTries', 1) };
+
+    var jt = cfgNumCell(S.cfg.JumpTries);
+    fill(2, { lv: '<LANGUAGE  ' + String(S.cfg.Language || 'en').toUpperCase(), lvs: 's-cyan',
+      rh: 'JUMP TRIES', rv: jt.rv, rvs: jt.rvs });
+    actions.L[2] = { press: languageToggle, input: null };
+    actions.R[2] = { press: null, input: intCfgInput('JumpTries', 1) };
+
+    var lvl = S.cfg.LogDEBUG ? 'DEBUG' : (S.cfg.LogINFO ? 'INFO' : 'ERROR');
+    var dr = cfgNumCell(S.cfg.DockingRetries);
+    fill(3, { lv: '<LOG LVL  ' + lvl, lvs: 's-cyan',
+      rh: 'DOCK RETRIES', rv: dr.rv, rvs: dr.rvs });
+    actions.L[3] = { press: logLevelToggle, input: null };
+    actions.R[3] = { press: null, input: intCfgInput('DockingRetries', 1) };
+
+    var wt = cfgNumCell(S.cfg.WaitForAutoDockTimer, function (v) { return v + ' S'; });
+    fill(4, { rh: 'AUTODOCK WAIT', rv: wt.rv, rvs: wt.rvs });
+    actions.R[4] = { press: null, input: floatCfgInput('WaitForAutoDockTimer') };
+  }
+
+  // CONFIG 3/5 — fuel / overlay (parity-gap ext. 7.4б). Overlay X/Y/font are
+  // read by the core only at start, hence the ON RESTART hint (core TODO).
+  function renderCFG3() {
+    var st = cfgNumCell(S.cfg.FuelScoopTimeOut, function (v) { return v + ' S'; });
+    fill(0, { rh: 'SCOOP TIMEOUT', rv: st.rv, rvs: st.rvs });
+    actions.R[0] = { press: null, input: floatCfgInput('FuelScoopTimeOut') };
+
+    var fa = cfgNumCell(S.cfg.FuelThreasholdAbortAP, function (v) { return v + '%'; });
+    fill(1, { lv: 'OVERLAY APPLIES ON RESTART', lvs: 's-hint',
+      rh: 'FUEL ABORT', rv: fa.rv, rvs: fa.rvs });
+    actions.R[1] = { press: null, input: intCfgInput('FuelThreasholdAbortAP', 0, 100) };
+
+    var ox = cfgNumCell(S.cfg.OverlayTextXOffset);
+    fill(2, { rh: 'OVL X', rv: ox.rv, rvs: ox.rvs });
+    actions.R[2] = { press: null, input: intCfgInput('OverlayTextXOffset', 0) };
+
+    var oy = cfgNumCell(S.cfg.OverlayTextYOffset);
+    fill(3, { rh: 'OVL Y', rv: oy.rv, rvs: oy.rvs });
+    actions.R[3] = { press: null, input: intCfgInput('OverlayTextYOffset', 0) };
+
+    var of = cfgNumCell(S.cfg.OverlayTextFontSize);
+    fill(4, { rh: 'OVL FONT', rv: of.rv, rvs: of.rvs });
+    actions.R[4] = { press: null, input: intCfgInput('OverlayTextFontSize', 1) };
+  }
+
+  // CONFIG 4/5 and 5/5 — game wait timers (parity-gap ext. 7.4б), R1-R5
+  // only, all floats >=0 rendered as "n.n S".
+  function renderWaitRows(list) {
+    for (var i = 0; i < list.length; i++) {
+      var key = list[i][0], label = list[i][1];
+      var c = cfgNumCell(S.cfg[key], function (v) { return Number(v).toFixed(1) + ' S'; });
+      fill(i, { rh: label, rv: c.rv, rvs: c.rvs });
+      actions.R[i] = { press: null, input: floatCfgInput(key) };
+    }
+  }
+  function renderCFG4() {
+    renderWaitRows([
+      ['Wait_FSSDetect', 'FSS DETECT'],
+      ['Wait_DockApproach', 'DOCK APPROACH'],
+      ['Wait_ShipStop', 'SHIP STOP'],
+      ['Wait_OccludedReposition', 'OCCLUDED REPOS'],
+      ['Wait_DSSScan', 'DSS SCAN']
+    ]);
+  }
+  function renderCFG5() {
+    renderWaitRows([
+      ['Wait_PastSun', 'PAST SUN'],
+      ['Wait_HeatDissipate', 'HEAT DISSIP'],
+      ['Wait_AfterJump', 'AFTER JUMP'],
+      ['PlanetDepartureSCOTime', 'PLANET DEP SCO'],
+      ['FCDepartureTime', 'FC DEPART']
+    ]);
   }
 
   // MCDU MENU · MAINT sub-page (dev/debug), spec §3.9. CV VIEW is an int 0/1
@@ -1535,6 +1704,10 @@
     } else if (S.page === 'TUNING') {
       if (dir === 'l') curveSelPrev();
       else if (dir === 'r') curveSelNext();
+    } else if (S.page === 'CFG') {
+      // CONFIG pages cycle 1..5, same as R6 NEXT PAGE> (parity-gap ext. 7.4б)
+      if (dir === 'l') { S.cfgPage = (S.cfgPage + 4) % 5; render(); }
+      else if (dir === 'r') { S.cfgPage = (S.cfgPage + 1) % 5; render(); }
     }
   }
 
