@@ -56,7 +56,13 @@
     curveNeedsLoad: false,   // true when we should load curve data from server
     curvePending: false,     // a curve.get is in flight — don't re-send on render ticks
     secConfirm: false,       // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
-    lndCoords: null          // LND R5 accepted target 'lat/lon'; guidance itself is Phase 8.2
+    lndCoords: null,         // LND R5 accepted target 'lat/lon'; guidance itself is Phase 8.2
+    calib: null,             // OCR calibration snapshot from the server (7.4в), key -> {rect,text,readonly}
+    calibPage: 0,            // CALIB list scroll: top line index of the CALIB_WIN window
+    calibKey: null,          // key open on the CALIBREG drill-in sub-page
+    calibResetConfirm: false,// CALIB R5 RESET ALL> two-step confirm armed?
+    calibTargetConfirm: false,// CALIB R6 CAL TARGET> two-step confirm armed?
+    calibRunning: false      // true between calib_target_started and calib_target_done
   };
 
   // actions[side][idx] = { press:fn, input:fn } or null. Rebuilt every render.
@@ -89,6 +95,8 @@
   var ws = null;
   var reconnectT = null;
   var secConfirmT = null;   // SEC F-PLN ACTIVATE SEC confirm-window timeout id
+  var calibResetConfirmT = null;   // CALIB RESET ALL confirm-window timeout id
+  var calibTargetConfirmT = null;  // CALIB CAL TARGET confirm-window timeout id
 
   function wsURL() {
     return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
@@ -205,6 +213,30 @@
         break;
       case 'config_loaded':
         flash('SETTINGS LOADED', 1800);
+        break;
+      case 'calibration':
+        S.calib = msg.data || {};
+        clampCalibPage();
+        render();
+        break;
+      case 'calib_preview':
+        flash('ON GAME SCREEN', 1500);
+        break;
+      case 'calib_saved':
+        flash('CALIB SAVED', 1800);
+        break;
+      case 'calib_reset':
+        flash('CALIB RESET', 1800);
+        break;
+      case 'calib_target_started':
+        S.calibRunning = true;
+        flash('CAL TARGET RUNNING', 1800);
+        render();
+        break;
+      case 'calib_target_done':
+        S.calibRunning = false;
+        flash(msg.ok ? 'CAL TARGET DONE' : 'CAL TARGET FAILED', 1800);
+        render();
         break;
       default:
         break;
@@ -1401,8 +1433,209 @@
     fill(3, { lv: dbgImgOn ? '<DBG IMAGES  ON' : '<DBG IMAGES  OFF', lvs: dbgImgOn ? 's-on' : 's-off' });
     actions.L[3] = { press: dbgImagesToggle, input: null };
 
+    fill(4, { lv: '<CALIBRATION', lvs: 's-normal' });
+    actions.L[4] = { press: function () { setPage('CALIB'); }, input: null };
+
     fill(5, { lv: '<RETURN', lvs: 's-normal' });
     actions.L[5] = { press: function () { setPage('SETTINGS'); }, input: null };
+  }
+
+  // CALIB · OCR REGIONS, spec §3.9 / 7.4в (web replacement for the tkinter
+  // Calibration tab). Reached only from MAINT L5 <CALIBRATION. Root list
+  // page: a vertically-scrolled window over the calibration key/value store
+  // (idiom copied from F-PLN's ROUTE_WIN scroll), left LSK on a row drills
+  // into the CALIBREG sub-page for that key.
+  var CALIB_WIN = 4;
+
+  function calibKeys() {
+    return S.calib ? Object.keys(S.calib).sort() : [];
+  }
+
+  // Keys are "ClassName.field[.subregion.sub]" and can run well past the 24-
+  // char cell width (e.g. "EDGalaxyMap.full_panel.subregion.cartographics").
+  // The class-name prefix carries the least information for telling rows
+  // apart at a glance, so drop it first; if the remainder still overflows,
+  // keep its tail (closest to the leaf field name) rather than its head.
+  function shortKey(key) {
+    var dot = key.indexOf('.');
+    var rest = dot >= 0 ? key.slice(dot + 1) : key;
+    return rest.length <= 24 ? rest : ('…' + rest.slice(-23));
+  }
+  // class prefix for the row header — disambiguates same-suffix keys
+  // (five different classes all carry a 'full_panel' region)
+  function calibClass(key) {
+    var dot = key.indexOf('.');
+    var cls = dot >= 0 ? key.slice(0, dot) : key;
+    return cls.replace(/^ED/, '');
+  }
+
+  function calibMaxScroll() {
+    return Math.max(0, calibKeys().length - CALIB_WIN);
+  }
+  function clampCalibPage() {
+    var m = calibMaxScroll();
+    if (S.calibPage > m) S.calibPage = m;
+    if (S.calibPage < 0) S.calibPage = 0;
+  }
+
+  function renderCALIB() {
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+    var keys = calibKeys();
+    var total = keys.length;
+
+    if (!S.calib) {
+      setHeader('CALIB', 'OCR REGIONS');
+      fill(2, { lv: 'LOADING CALIBRATION', lvs: 's-hint', center: true });
+    } else {
+      clampCalibPage();
+      var top = S.calibPage;
+      var bottom = Math.min(top + CALIB_WIN, total);
+      setHeader('CALIB', total ? (top + 1) + '-' + bottom + '/' + total : 'OCR REGIONS');
+      for (var r = 0; r < CALIB_WIN; r++) {
+        var gi = top + r;
+        if (gi >= total) continue;
+        var key = keys[gi];
+        var entry = S.calib[key];
+        fill(r, {
+          lh: pad2(gi + 1) + ' ' + calibClass(key), lv: shortKey(key), lvs: 's-normal',
+          rv: (entry && entry.readonly) ? 'RO' : '', rvs: 's-muted'
+        });
+        (function (k) {
+          actions.L[r] = { press: function () { S.calibKey = k; setPage('CALIBREG'); }, input: null };
+        })(key);
+      }
+    }
+
+    fill(4, {
+      lv: '<SAVE CALIB', lvs: 's-normal',
+      rv: S.calibResetConfirm ? 'RESET ALL  CONFIRM?' : 'RESET ALL>',
+      rvs: S.calibResetConfirm ? 's-alert' : 's-cyan'
+    });
+    actions.L[4] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'calibration.save' }); }, input: null };
+    actions.R[4] = { press: calibResetPress, input: null };
+
+    var targetLabel = S.calibRunning ? 'CALIBRATING…'
+      : (S.calibTargetConfirm ? 'CAL TARGET  CONFIRM?' : 'CAL TARGET>');
+    fill(5, {
+      lv: '<RETURN', lvs: 's-normal',
+      rv: targetLabel, rvs: S.calibRunning ? 's-muted' : (S.calibTargetConfirm ? 's-alert' : 's-cyan')
+    });
+    actions.L[5] = { press: function () { setPage('MAINT'); }, input: null };
+    actions.R[5] = { press: calibTargetPress, input: null };
+  }
+
+  // R5 RESET ALL>: two-step confirm (arm -> CONFIRM? -> act), same window/
+  // timeout idiom as SEC F-PLN's secActivatePress.
+  function calibResetPress() {
+    if (!ensureConn()) return;
+    if (S.calibResetConfirm) {
+      if (calibResetConfirmT) { clearTimeout(calibResetConfirmT); calibResetConfirmT = null; }
+      S.calibResetConfirm = false;
+      sendRaw({ cmd: 'calibration.reset' });
+      render();
+      return;
+    }
+    S.calibResetConfirm = true;
+    if (calibResetConfirmT) clearTimeout(calibResetConfirmT);
+    calibResetConfirmT = setTimeout(function () {
+      calibResetConfirmT = null;
+      S.calibResetConfirm = false;
+      if (S.page === 'CALIB') render();
+    }, 5000);
+    render();
+  }
+
+  // R6 CAL TARGET>: two-step confirm, then a long blocking scan on the
+  // backend — while it runs the label reads CALIBRATING… and further presses
+  // just flash IN PROGRESS instead of re-arming.
+  function calibTargetPress() {
+    if (S.calibRunning) { flash('IN PROGRESS', 1500); return; }
+    if (!ensureConn()) return;
+    if (S.calibTargetConfirm) {
+      if (calibTargetConfirmT) { clearTimeout(calibTargetConfirmT); calibTargetConfirmT = null; }
+      S.calibTargetConfirm = false;
+      sendRaw({ cmd: 'calibration.calibrate_target' });
+      render();
+      return;
+    }
+    S.calibTargetConfirm = true;
+    if (calibTargetConfirmT) clearTimeout(calibTargetConfirmT);
+    calibTargetConfirmT = setTimeout(function () {
+      calibTargetConfirmT = null;
+      S.calibTargetConfirm = false;
+      if (S.page === 'CALIB') render();
+    }, 5000);
+    render();
+  }
+
+  // CALIBREG · drill-in for one region key, opened from a CALIB row.
+  // R1-R4 edit rect[0..3] (X0/Y0/X1/Y1) via [E]; readonly regions show the
+  // values muted with no input. L1 previews the quad on the game monitor;
+  // L2-L4 show the region's instruction text (first ~3 non-blank lines).
+  var CALIB_RECT_LABELS = ['X0', 'Y0', 'X1', 'Y1'];
+
+  function calibTextLines(text) {
+    var raw = String(text || '').split('\n');
+    var out = [];
+    for (var i = 0; i < raw.length && out.length < 3; i++) {
+      var line = raw[i].trim();
+      if (!line) continue;
+      out.push(line.length > 24 ? line.slice(0, 23) + '…' : line);
+    }
+    return out;
+  }
+
+  function renderCALIBREG() {
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+    var key = S.calibKey;
+    var entry = (S.calib && key) ? S.calib[key] : null;
+    setHeader('CALIB REG', key ? (calibClass(key) + '·' + shortKey(key)).slice(0, 26) : '---');
+
+    if (!entry) {
+      fill(2, { lv: 'NO REGION SELECTED', lvs: 's-muted', center: true });
+      fill(5, { lv: '<RETURN', lvs: 's-normal' });
+      actions.L[5] = { press: function () { setPage('CALIB'); }, input: null };
+      return;
+    }
+
+    var rect = entry.rect || [0, 0, 0, 0];
+    var ro = !!entry.readonly;
+    var textLines = calibTextLines(entry.text);
+
+    for (var i = 0; i < 4; i++) {
+      var val = (rect[i] === null || rect[i] === undefined) ? '---' : Number(rect[i]).toFixed(4);
+      var row = { rh: CALIB_RECT_LABELS[i], rv: val, rvs: ro ? 's-muted' : 's-cyan' };
+      if (i === 0) { row.lv = '<PREVIEW'; row.lvs = 's-normal'; }
+      else { row.lv = textLines[i - 1] || ''; row.lvs = 's-hint'; }
+      fill(i, row);
+      if (!ro) actions.R[i] = { press: null, input: calibRectInput(key, i) };
+    }
+    actions.L[0] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'calibration.preview', key: key }); }, input: null };
+
+    if (ro) fill(4, { lv: 'READ-ONLY · DERIVED', lvs: 's-hint', center: true });
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('CALIB'); }, input: null };
+  }
+
+  // shared [E] input handler factory for one rect component: 0..1 float,
+  // sends the FULL rect (backend contract) with just this component swapped.
+  // Local validation is number + range only; x0<x1/y0<y1 is server-side (an
+  // error there arrives as a MESSAGE LOG line, not a local INVALID).
+  function calibRectInput(key, idx) {
+    return function (v) {
+      var n = parseFloat(v.trim());
+      if (isNaN(n) || n < 0 || n > 1) return false;
+      var entry = S.calib && S.calib[key];
+      if (!entry) return false;
+      var rect = (entry.rect || [0, 0, 0, 0]).slice();
+      rect[idx] = n;
+      if (!ensureConn()) return 'keep';
+      if (sendRaw({ cmd: 'calibration.set_rect', key: key, rect: rect })) return true;
+      return 'keep';
+    };
   }
 
   // RPY TUNING · spec §3.7. Formerly the top-level PERF page; moved under
@@ -1640,6 +1873,8 @@
     else if (S.page === 'OPTIONS') renderOPTIONS();
     else if (S.page === 'CFG') renderCFG();
     else if (S.page === 'MAINT') renderMAINT();
+    else if (S.page === 'CALIB') renderCALIB();
+    else if (S.page === 'CALIBREG') renderCALIBREG();
     else renderINIT();
 
     // show/hide curve panel
@@ -1647,7 +1882,8 @@
 
     // highlight active function key (sub-pages light their parent key)
     var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' :
-      (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT' || S.page === 'TUNING') ? 'SETTINGS' : S.page;
+      (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT' || S.page === 'TUNING' ||
+       S.page === 'CALIB' || S.page === 'CALIBREG') ? 'SETTINGS' : S.page;
     fkEls.forEach(function (b) {
       var key = b.getAttribute('data-key');
       b.classList.toggle('fk-active', PAGE_FOR_KEY[key] === pageKey);
@@ -1673,9 +1909,16 @@
       if (secConfirmT) { clearTimeout(secConfirmT); secConfirmT = null; }
       S.secConfirm = false;
     }
+    if (S.page === 'CALIB' && (S.calibResetConfirm || S.calibTargetConfirm)) {
+      if (calibResetConfirmT) { clearTimeout(calibResetConfirmT); calibResetConfirmT = null; }
+      if (calibTargetConfirmT) { clearTimeout(calibTargetConfirmT); calibTargetConfirmT = null; }
+      S.calibResetConfirm = false;
+      S.calibTargetConfirm = false;
+    }
     S.page = p;
     if (p === 'ROUTE' || p === 'INIT' || p === 'DATA') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
     if (p === 'TUNING') S.curveNeedsLoad = true;
+    if (p === 'CALIB') sendRaw({ cmd: 'calibration.get' });
     render();
   }
 
@@ -1708,6 +1951,14 @@
       // CONFIG pages cycle 1..5, same as R6 NEXT PAGE> (parity-gap ext. 7.4б)
       if (dir === 'l') { S.cfgPage = (S.cfgPage + 4) % 5; render(); }
       else if (dir === 'r') { S.cfgPage = (S.cfgPage + 1) % 5; render(); }
+    } else if (S.page === 'CALIB') {
+      // CALIB list scrolls like F-PLN: up/down by a line, left/right by a window
+      var cm = calibMaxScroll();
+      if (dir === 'u') S.calibPage = Math.max(0, S.calibPage - 1);
+      else if (dir === 'd') S.calibPage = Math.min(cm, S.calibPage + 1);
+      else if (dir === 'l') S.calibPage = Math.max(0, S.calibPage - CALIB_WIN);
+      else if (dir === 'r') S.calibPage = Math.min(cm, S.calibPage + CALIB_WIN);
+      render();
     }
   }
 
