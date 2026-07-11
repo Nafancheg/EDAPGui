@@ -56,10 +56,12 @@
 > ✅ **7.3.0–7.3.3 завершены** (HMI-контракт; PROG-фазы+PREFLIGHT+DIR; FUEL PRED; F-PLN §3.3 + CRU OPT/SYSTEM drill-in) — целиком в ченджлоге, коммиты `d988897`…`2639b9f`. Замечания 11–13 внесены в `design/mcdu-button-map.md`.
 
 **7.3.4 — Остальные активные страницы (ТЕКУЩИЙ БЛОК):**
-- [ ] 🔵 INIT · PREFLIGHT полный (§3.2): входы в разделы L1–L5, сводка справа, R6 `PROG>`.
-- [ ] 🔵 MCDU MENU · SETTINGS (§3.9): корень + подстраницы OPTIONS / CONFIG / MAINT ⚙dev (тумблеры/тайминги по таблицам).
-- [ ] 🔵 PERF приведение к контракту (§3.7 + пункты 5–7 разбора нарушений): действия влево (SAVE SHIP L4, SAVE ALL L5), выбор точки — slew ←/→, THROTTLE R1 только [E] (цикл по нажатию убрать), drag-график сохраняется.
+- [x] 🔵 INIT · PREFLIGHT полный (§3.2): входы в разделы L1–L5, сводка справа, R6 `PROG>`. ✅ каркас в 7.3.1; L4→DATA (`2514b0d`) и L5→SETTINGS (`d709e16`) активированы — все 5 входов живые.
+- [x] 🔵 MCDU MENU · SETTINGS (§3.9): корень + подстраницы OPTIONS / CONFIG / MAINT ⚙dev (тумблеры/тайминги по таблицам). ✅ бэкенд-сеттер-диспатч `eff958c` (VOICE/OVERLAY живьём) + фронт+демо-фикстура `d709e16`. MCDU MENU — реальная hardware-клавиша, замаппена.
+- [ ] 🔵 PERF приведение к контракту (§3.7 + пункты 5–7 разбора нарушений): действия влево (SAVE SHIP L4, SAVE ALL L5), выбор точки — slew ←/→, THROTTLE R1 только [E] (цикл по нажатию убрать), drag-график сохраняется. ← СЛЕДУЮЩЕЕ
 - [x] 🔵 DATA · SYSTEM DATA (§3.8): readout-страница, L1 EDSM FETCH [план]. ✅ коммит `2514b0d`; попутно активирован INIT L4 (DATA — реальная hardware-клавиша §1.1, зарегистрирована).
+
+> ⚠️ **Бэкенд-гэп из SETTINGS (follow-up, не блокер):** `LOAD ALL`/`SAVE ALL` (root L4/L5) и `SAVE SHIP`/`SAVE ALL` в PERF §3.7 требуют WS-команд персиста (`config.save` = `update_config`+`update_ship_configs`+calib; `config.load` = перечитать `AP.json`). Сейчас `config.set` живёт только в памяти ядра — веб-тумблеры НЕ персистятся на диск до этой команды. Плюс CONFIG L2–L4 (reload/auto-assign/refresh bindings) и BINDS-статус — тоже без команд. Мелкий бэкенд-юнит; согласовать при PERF (там SAVE SHIP уже нужен через `config.save_ship`, который ЕСТЬ).
 
 **7.3.5 — [план/бэкенд]-страницы каркасом (UI со слотами и [план]-разметкой, живут после Фазы 8):**
 - [ ] 🔵 DIR · DIRECT-TO (§3.5), SEC F-PLN · SECONDARY ROUTE (§3.4, двухшаговый ACTIVATE `CONFIRM?`) — кнопки/валидации на месте, действия отвечают `NOT AVAILABLE` до бэкенда 8.1.
