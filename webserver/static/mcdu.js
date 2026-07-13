@@ -984,7 +984,8 @@
       lv: '<PLOT FUEL-SAFE', lvs: busy ? 's-muted' : 's-normal',
       rh: 'SEC DEST', rv: destVal, rvs: 's-cyan'
     });
-    actions.L[0] = { press: function () { secPlotPress('fuel_safe'); }, input: null };
+    actions.L[0] = { press: function () { secPlotPress('fuel_safe'); },
+                     input: function (v) { return secPlotInput(v, 'fuel_safe'); } };
     actions.R[0] = { press: null, input: secDestInput };
 
     fill(1, {
@@ -992,7 +993,8 @@
       rh: 'JUMPS', rv: 'P ' + secCompareNum(primary.jumps) + ' / S ' + secCompareNum(secondary && secondary.jumps),
       rvs: 's-normal'
     });
-    actions.L[1] = { press: function () { secPlotPress('fast'); }, input: null };
+    actions.L[1] = { press: function () { secPlotPress('fast'); },
+                     input: function (v) { return secPlotInput(v, 'fast'); } };
 
     fill(2, {
       lv: S.secConfirm ? '<ACTIVATE SEC  CONFIRM?' : '<ACTIVATE SEC',
@@ -1031,12 +1033,32 @@
   // sec_plot_started until the matching sec_route lands) further presses just
   // flash instead of re-sending — the backend's own busy-guard would reject
   // the retry anyway (see PlotError("PLOT IN PROGRESS") in RoutePlanner.py).
+  // With no destination anywhere (no SEC DEST, no active F-PLN) the press is
+  // refused locally with a hint instead of a round-trip backend error.
   function secPlotPress(profile) {
     if (S.secBusy) { flash('PLOTTING…', 1200); return; }
+    if (!S.secDest && !(S.route.active && S.route.destination)) {
+      flash('ENTER SEC DEST', 1800);
+      return;
+    }
     if (!ensureConn()) return;
     var body = { cmd: 'sec.plot', profile: profile };
     if (S.secDest) body.dest = S.secDest;
     sendRaw(body);
+  }
+
+  // Scratchpad entry on a PLOT LSK: treat the typed text as the destination
+  // and plot straight away (otherwise doLSK would reject the press with
+  // NOT ALLOWED — an easy trap when F-PLN is empty and SEC DEST is blank).
+  function secPlotInput(v, profile) {
+    var t = v.trim();
+    if (!t) return false;
+    if (S.secBusy) { flash('PLOTTING…', 1200); return 'keep'; }
+    if (!ensureConn()) return 'keep';
+    S.secDest = t;
+    sendRaw({ cmd: 'sec.plot', profile: profile, dest: t });
+    render();
+    return true;
   }
 
   // Two-step confirm per §3.4: 1st press arms a 5s confirm window (label
