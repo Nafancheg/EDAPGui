@@ -48,6 +48,30 @@ DEMO_CURVES = {
 SPEED_DEMANDS = ("Speed0", "Speed50", "Speed100",
                  "SCSpeed0", "SCSpeed50", "SCSpeed100")
 
+# Krait MkII, engineered 5A FSD — enough for RoutePlanner._loadout()/
+# _fast_range() (FUEL-SAFE and FAST plotting) to compute a jump range.
+DEMO_LOADOUT = {
+    "Ship": "krait_mkii", "UnladenMass": 545.8, "CargoCapacity": 82,
+    "MaxJumpRange": 30.1,
+    "FuelCapacity": {"Main": 32.0, "Reserve": 0.63},
+    "Modules": [
+        {"Slot": "FrameShiftDrive", "Item": "int_hyperdrive_size5_class5",
+         "Engineering": {"Modifiers": [
+             {"Label": "FSDOptimalMass", "Value": 1627.5},
+             {"Label": "MaxFuelPerJump", "Value": 5.2},
+         ]}},
+    ],
+}
+
+
+class FakeJournal:
+    """Stand-in for EDJournal — RoutePlanner (built by the real server code
+    around this FakeAP) only ever calls ship_state() for location/jump-range/
+    loadout, so that's the only surface this needs."""
+    def ship_state(self):
+        return {"location": "Devataru", "max_jump_range": 30.1,
+                "loadout_raw": DEMO_LOADOUT}
+
 
 class FakeAP:
     def __init__(self):
@@ -80,6 +104,7 @@ class FakeAP:
                        "DSSButton": "Primary", "AutoTuneRPYRates": False,
                        "Language": "en", "LogDEBUG": False, "LogINFO": True}
         self.nav_route = FakeNavRoute()
+        self.jn = FakeJournal()
         self.fsd = False
         self.sc = False
         self.fuel = itertools.cycle([72.4, 71.9, 71.3, 44.0, 23.5, 8.2, 91.0])

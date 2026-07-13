@@ -139,8 +139,8 @@
 
 > ✅ **Бэкенд-часть СДЕЛАНА (2026-07-13, коммиты `dc65ab0`+`e3a6ce6`) → ченджлог.** Дизайн-док: `design/route-planner-backend.md` (нормативный). Итого: `RoutePlanner.py` (Spansh neutron=FAST / galaxy=FUEL-SAFE / EDSM=DIR), WS-команды `sec.*`/`dir.*`, контракт в `docs/web_api_contract.md` §7, QA `tools/qa_route_planner.py` (15/15) + `tools/qa_route_ws.py` (8/8). ⚠️ EDSM требует кастомный User-Agent (403 на `python-requests`).
 
-- [ ] 🔵 [фронт, позже] Подключить страницы SEC F-PLN §3.4 / DIR §3.5 к командам `sec.*`/`dir.*` (когда вернёмся к веб-морде); формат данных — `docs/web_api_contract.md` §7.
-- [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR.
+- [x] 🔵 Фронт ✅ (2026-07-13, по запросу заказчика «хочу видеть в MCDU»): SEC F-PLN §3.4 / DIR §3.5 подключены к `sec.*`/`dir.*` + страница SEC LIST (формат F-PLN) + demo-сервер получил FakeJournal (реальный планнер на fake-ядре). Проверено живьём в браузере через реальные Spansh/EDSM. Замечание 18 в спеке. Попутные фиксы: scratchpad-charset `'`/`*`, потребление ввода на успешном dir_state.
+- [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR. Живая проверка SEC/DIR-страниц с планшета.
 
 ### 8.2 — Режимы посадки на планету (фаза LND)
 - [ ] 🟣 Последовательность: drop to Orbital Cruise → de-orbit/glide → surface approach → target (POI ИЛИ координаты) → final descent/touchdown. Отдельная фаза, НЕ часть станционной ARRIVAL.

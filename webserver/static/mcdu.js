@@ -56,6 +56,12 @@
     curveNeedsLoad: false,   // true when we should load curve data from server
     curvePending: false,     // a curve.get is in flight — don't re-send on render ticks
     secConfirm: false,       // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
+    sec: null,                // last sec_route payload: {secondary, dir, busy, error, compare}
+    secDest: '',              // local SEC DEST [E] input (SEC R1)
+    secBusy: false,           // true between sec_plot_started and the next sec_route
+    secListPage: 0,           // SECLIST scroll: top line index of the SECLIST_WIN window
+    dir: null,                // last DirCandidate from dir_state (DIR page)
+    dirPending: null,         // dir.set entry awaiting async validation (consumed on dir_state)
     lndCoords: null,         // LND R5 accepted target 'lat/lon'; guidance itself is Phase 8.2
     calib: null,             // OCR calibration snapshot from the server (7.4в), key -> {rect,text,readonly}
     calibPage: 0,            // CALIB list scroll: top line index of the CALIB_WIN window
@@ -184,7 +190,37 @@
           S.curvePending = false;
           S.curveNeedsLoad = false;
         }
+        if (S.page === 'DIR' && msg.text === 'INVALID') flash('INVALID', 1500);
+        S.dirPending = null;   // rejected/failed dir.set: leave the entry for correction
         appendLog('[error] ' + (msg.text || ''), false, true);
+        break;
+      case 'sec_plot_started':
+        S.secBusy = true;
+        flash('PLOTTING…', 1500);
+        if (S.page === 'SEC') render();
+        break;
+      case 'sec_route':
+        S.sec = msg.data || null;
+        S.secBusy = false;
+        if (S.sec && S.sec.error) {
+          appendLog('[sec] ' + S.sec.error, false, true);
+          flash(shortenMsg(S.sec.error), 1800);
+        }
+        render();
+        break;
+      case 'dir_started':
+        flash('SEARCHING…', 1500);
+        break;
+      case 'dir_state':
+        S.dir = (msg.data && msg.data.dir) || null;
+        // a confirming dir_state consumes the scratch entry that produced it
+        // (MCDU convention: a successful LSK entry is eaten by the field)
+        if (S.dirPending && S.scratch === S.dirPending) {
+          S.scratch = '';
+          renderScratch();
+        }
+        S.dirPending = null;
+        if (S.page === 'DIR') render();
         break;
       case 'event':
         appendLog('[' + (msg.tag || 'event') + '] ' + bodyToStr(msg.body), false, false);
@@ -241,6 +277,13 @@
       default:
         break;
     }
+  }
+
+  // shorten a long backend error/status string for a transient flash() cell
+  // (the scratchpad row is ~22 chars); the full text still goes to the log.
+  function shortenMsg(text) {
+    var t = String(text || '');
+    return t.length > 20 ? t.slice(0, 19) + '…' : t;
   }
 
   function bodyToStr(b) {
@@ -358,7 +401,9 @@
   // direct typing / clipboard paste into the scratchpad input
   spInput.addEventListener('input', function () {
     if (S.flash) { renderScratch(); return; }
-    var v = spInput.value.toUpperCase().replace(/[^A-Z0-9 ./+-]/g, '').slice(0, 22);
+    // charset covers ED system names too: apostrophe (Barnard's Star) and
+    // asterisk (Sagittarius A*) are legal DIR / SEC DEST input
+    var v = spInput.value.toUpperCase().replace(/[^A-Z0-9 ./+'*-]/g, '').slice(0, 22);
     if (spInput.value !== v) spInput.value = v;
     S.scratch = v;
   });
@@ -858,81 +903,153 @@
     actions.R[5] = { press: function () { setPage('PROG'); }, input: null };
   }
 
-  // DIR · DIRECT-TO, spec §3.5. [план] — no direct-to plotter until Phase 8.1;
-  // every action replies NOT AVAILABLE. R3 (candidate class · distance) is a
-  // static [план] row; it has no backing data yet, only the slot.
+  // DIR · DIRECT-TO, spec §3.5, wired to the Phase 8.1 route-planner backend
+  // (§7 of docs/web_api_contract.md): dir.nearest / dir.set commands, dir_state
+  // events. star_class comes back as a long descriptive string (e.g. "G
+  // (White-Yellow) Star") — dirClassShort() trims it to the leading letter(s)
+  // before the first parenthesis for the cramped R3 cell.
+  function dirClassShort(cls) {
+    if (!cls) return '';
+    var s = String(cls);
+    var i = s.indexOf('(');
+    return (i >= 0 ? s.slice(0, i) : s).trim();
+  }
+
   function renderDIR() {
     setHeader('DIR', 'DIRECT-TO');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
-    fill(0, { lv: '<NEAREST SCOOPABLE', lvs: 's-muted',
+
+    fill(0, { lv: '<NEAREST SCOOPABLE', lvs: 's-normal',
       rh: 'DIRECT TO', rv: '________', rvs: 's-cyan' });
-    actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    actions.L[0] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'dir.nearest', scoopable: true }); }, input: null };
     actions.R[0] = { press: null, input: dirTargetInput };
-    fill(1, { lv: '<NEAREST SYSTEM', lvs: 's-muted',
-      rh: 'CAND', rv: '---', rvs: 's-muted' });
-    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
-    fill(2, { rv: '---  · --- LY', rvs: 's-muted' });
-    fill(3, { lv: 'DIRECT-TO PLOTTER', lvs: 's-muted', center: true });
-    fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint', center: true });
+
+    var cand = S.dir;
+    fill(1, { lv: '<NEAREST SYSTEM', lvs: 's-normal',
+      rh: 'CAND', rv: cand ? String(cand.system) : '---', rvs: cand ? 's-normal' : 's-muted' });
+    actions.L[1] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'dir.nearest', scoopable: false }); }, input: null };
+
+    var classVal = '---';
+    if (cand) {
+      var cls = dirClassShort(cand.star_class) || '?';
+      var dist = (cand.dist_ly === null || cand.dist_ly === undefined) ? '--' : Number(cand.dist_ly).toFixed(1);
+      classVal = cls + ' · ' + dist + ' LY';
+    }
+    fill(2, { rv: classVal, rvs: cand ? 's-normal' : 's-muted' });
   }
 
+  // R1 DIRECT TO [E]: fire-and-forget — dir.set is sent immediately, no local
+  // echo of the typed value (the candidate card on R2/R3 is the confirmation
+  // once dir_state comes back). Validation is async, so 'keep' here; the
+  // pending entry is consumed on the confirming dir_state (handle()) while an
+  // INVALID reply leaves it in the scratchpad for correction.
   function dirTargetInput(v) {
-    if (!v.trim()) return false;
-    flash('NOT AVAILABLE', 1500);   // plotter backend arrives in Phase 8.1
+    var t = v.trim();
+    if (!t) return false;
+    if (!ensureConn()) return 'keep';
+    sendRaw({ cmd: 'dir.set', system: t });
+    S.dirPending = t;
     return 'keep';
   }
 
-  // SEC F-PLN · SECONDARY ROUTE, spec §3.4. [план] — no secondary-route
-  // plotter until Phase 8.1; every action replies NOT AVAILABLE. L3 <ACTIVATE
-  // SEC still implements the real two-step press>CONFIRM?>press UI required
-  // by §3.4, even though the second press has nothing to swap to yet.
+  // SEC F-PLN · SECONDARY ROUTE, spec §3.4, wired to the Phase 8.1
+  // route-planner backend (§7 of docs/web_api_contract.md): sec.plot /
+  // sec.get / sec.activate commands, sec_route events. compare.primary comes
+  // from the server (built off the active F-PLN); the secondary-side numbers
+  // are read straight off S.sec.secondary per the contract.
+  function secCompareNum(v) { return (v === null || v === undefined) ? '---' : String(v); }
+
+  // distances: whole LY once >=100 (keeps the cell narrow), one decimal below
+  function secDist(v) {
+    if (v === null || v === undefined) return '---';
+    var n = Number(v);
+    if (isNaN(n)) return '---';
+    return n >= 100 ? String(Math.round(n)) : n.toFixed(1);
+  }
+
   function renderSEC() {
     setHeader('SEC F-PLN', 'SECONDARY ROUTE');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
-    fill(0, { lv: '<PLOT FUEL-SAFE', lvs: 's-muted',
-      rh: 'SEC DEST', rv: '________', rvs: 's-cyan' });
-    actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    var sec = S.sec || {};
+    var primary = (sec.compare && sec.compare.primary) || {};
+    var secondary = sec.secondary || null;
+    var busy = !!S.secBusy;
+
+    var destVal = S.secDest || (S.route.active ? S.route.destination : '') || '________';
+    fill(0, {
+      lh: secondary ? (secondary.profile + ' · PLOTTED') : '',
+      lv: '<PLOT FUEL-SAFE', lvs: busy ? 's-muted' : 's-normal',
+      rh: 'SEC DEST', rv: destVal, rvs: 's-cyan'
+    });
+    actions.L[0] = { press: function () { secPlotPress('fuel_safe'); }, input: null };
     actions.R[0] = { press: null, input: secDestInput };
 
-    fill(1, { lv: '<PLOT FAST/RISKY', lvs: 's-muted',
-      rh: 'JUMPS', rv: 'P --- / S ---', rvs: 's-muted' });
-    actions.L[1] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
+    fill(1, {
+      lv: '<PLOT FAST/RISKY', lvs: busy ? 's-muted' : 's-normal',
+      rh: 'JUMPS', rv: 'P ' + secCompareNum(primary.jumps) + ' / S ' + secCompareNum(secondary && secondary.jumps),
+      rvs: 's-normal'
+    });
+    actions.L[1] = { press: function () { secPlotPress('fast'); }, input: null };
 
     fill(2, {
       lv: S.secConfirm ? '<ACTIVATE SEC  CONFIRM?' : '<ACTIVATE SEC',
-      lvs: S.secConfirm ? 's-alert' : 's-muted',
-      rh: 'DIST', rv: 'P --- / S --- LY', rvs: 's-muted'
+      lvs: S.secConfirm ? 's-alert' : (secondary ? 's-normal' : 's-muted'),
+      rh: 'DIST', rv: 'P ' + secDist(primary.dist_ly) + ' / S ' + secDist(secondary && secondary.dist_ly) + ' LY',
+      rvs: 's-normal'
     });
     actions.L[2] = { press: secActivatePress, input: null };
 
-    fill(3, { lv: 'SEC ROUTE PLOTTER', lvs: 's-hint',
-      rh: 'SCOOPS', rv: 'P --- / S ---', rvs: 's-muted' });
+    var pScoops = secCompareNum(primary.scoops);
+    var sScoops = secCompareNum(secondary && secondary.scoops);
+    fill(3, { rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal' });
 
-    fill(4, { lv: 'AWAITS BACKEND (PHASE 8.1)', lvs: 's-hint',
-      rh: 'RISK', rv: '---', rvs: 's-muted' });
-    // row 5 (L6/R6) stays empty — SEC is a root page (spec §1.3: no RETURN)
-    // and there is no secondary data to page through yet.
+    var risk = secondary && secondary.risk;
+    fill(4, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
+
+    if (secondary) {
+      fill(5, { rv: 'NEXT PAGE>', rvs: 's-cyan' });
+      actions.R[5] = { press: function () { setPage('SECLIST'); }, input: null };
+    }
+    // L6 stays empty — SEC is a root page (spec §1.3: no RETURN).
   }
 
+  // R1 SEC DEST [E]: local override for the plot destination; default (shown
+  // when empty) is the active F-PLN destination. Accepting clears the
+  // scratchpad (contract: the entered value now shows in the R1 cell).
   function secDestInput(v) {
-    if (!v.trim()) return false;
-    flash('NOT AVAILABLE', 1500);   // plotter backend arrives in Phase 8.1
-    return 'keep';
+    var t = v.trim();
+    if (!t) return false;
+    S.secDest = t;
+    render();
+    return true;
+  }
+
+  // L1/L2 PLOT actions: while a plot is already running (S.secBusy, set from
+  // sec_plot_started until the matching sec_route lands) further presses just
+  // flash instead of re-sending — the backend's own busy-guard would reject
+  // the retry anyway (see PlotError("PLOT IN PROGRESS") in RoutePlanner.py).
+  function secPlotPress(profile) {
+    if (S.secBusy) { flash('PLOTTING…', 1200); return; }
+    if (!ensureConn()) return;
+    var body = { cmd: 'sec.plot', profile: profile };
+    if (S.secDest) body.dest = S.secDest;
+    sendRaw(body);
   }
 
   // Two-step confirm per §3.4: 1st press arms a 5s confirm window (label
-  // flips to CONFIRM?); 2nd press within the window would swap in the
-  // secondary route, but the plotter doesn't exist yet, so it just replies
-  // NOT AVAILABLE and disarms. The window auto-disarms on timeout, and
-  // setPage() disarms it on leaving the SEC page so CONFIRM? never sticks.
+  // flips to CONFIRM?); 2nd press within the window sends sec.activate — the
+  // backend still stubs this as NOT AVAILABLE until the in-game part of
+  // Phase 8.1 lands (§7 of the API contract), which surfaces as a normal
+  // 'error' log line, not a local flash. The window auto-disarms on timeout,
+  // and setPage() disarms it on leaving the SEC page so CONFIRM? never sticks.
   function secActivatePress() {
     if (S.secConfirm) {
       if (secConfirmT) { clearTimeout(secConfirmT); secConfirmT = null; }
       S.secConfirm = false;
-      flash('NOT AVAILABLE', 1500);
+      if (ensureConn()) sendRaw({ cmd: 'sec.activate' });
       render();
       return;
     }
@@ -944,6 +1061,71 @@
       if (S.page === 'SEC') render();
     }, 5000);
     render();
+  }
+
+  // SECLIST · secondary-route system list (level 2, from SEC R6), spec §3.4
+  // "R6 NEXT PAGE> — страницы списка SEC-маршрута (формат как F-PLN)". Same
+  // continuous vertical-slew list idiom as F-PLN (renderROUTE/ROUTE_WIN), but
+  // the Route.systems entries have no star_class (see §7 of the API
+  // contract), so the row header is just the index. neutron gets an NTR tag
+  // (whole line recolored s-warn — a single cell can't mix two text colors);
+  // must_refuel has no dedicated icon in this data shape, so it is a ·RFL
+  // text suffix; scoopable reuses the exact F-PLN SCOOP/✗ marker on the right.
+  var SECLIST_WIN = 5;
+
+  function secListSystems() { return (S.sec && S.sec.secondary && S.sec.secondary.systems) || []; }
+  function secListItemCount() { var n = secListSystems().length; return n ? n + 1 : 0; }
+  function secListMaxScroll() { return Math.max(0, secListItemCount() - SECLIST_WIN); }
+  function clampSecListPage() {
+    var m = secListMaxScroll();
+    if (S.secListPage > m) S.secListPage = m;
+    if (S.secListPage < 0) S.secListPage = 0;
+  }
+
+  function renderSECLIST() {
+    clearActions();
+    for (var i = 0; i < 6; i++) clearRow(i);
+
+    var sys = secListSystems();
+    var route = (S.sec && S.sec.secondary) || null;
+    if (!route || sys.length === 0) {
+      setHeader('SEC LIST', '---');
+      fill(2, { lv: 'NO SECONDARY ROUTE', lvs: 's-muted', center: true });
+      fill(5, { lv: '<RETURN', lvs: 's-normal' });
+      actions.L[5] = { press: function () { setPage('SEC'); }, input: null };
+      return;
+    }
+
+    clampSecListPage();
+    var top = S.secListPage;
+    var bottom = Math.min(top + SECLIST_WIN, sys.length);
+    setHeader('SEC LIST', (top + 1) + '-' + bottom + '/' + sys.length + ' ↕');
+
+    for (var r = 0; r < SECLIST_WIN; r++) {
+      var gi = top + r;
+      if (gi > sys.length) continue;
+      if (gi === sys.length) {
+        var totJumps = (route.jumps === null || route.jumps === undefined) ? (sys.length - 1) : route.jumps;
+        var totLy = secDist(route.dist_ly);
+        fill(r, {
+          lh: 'END OF PLAN', lv: totJumps + ' JMP', lvs: 's-cyan',
+          rh: 'TOTAL', rv: totLy + ' LY', rvs: 's-cyan'
+        });
+        continue;
+      }
+      var it = sys[gi];
+      var dist = (gi === 0) ? 'ORIGIN'
+        : (it.dist_ly === null || it.dist_ly === undefined ? '--' : Number(it.dist_ly).toFixed(1) + ' LY');
+      var name = (it.system || '?') + (it.neutron ? ' NTR' : '') + (it.must_refuel ? ' ·RFL' : '');
+      fill(r, {
+        lh: pad2(gi + 1), rh: dist,
+        lv: name, lvs: it.neutron ? 's-warn' : 's-normal',
+        rv: it.scoopable ? 'SCOOP' : '✗', rvs: it.scoopable ? 's-on' : 's-alert'
+      });
+    }
+
+    fill(5, { lv: '<RETURN', lvs: 's-normal' });
+    actions.L[5] = { press: function () { setPage('SEC'); }, input: null };
   }
 
   // F-PLN · ACTIVE ROUTE, spec §3.3 + Замечания 12/13: the whole plan is one
@@ -1866,6 +2048,7 @@
     else if (S.page === 'TUNING') renderTUNING();
     else if (S.page === 'DIR') renderDIR();
     else if (S.page === 'SEC') renderSEC();
+    else if (S.page === 'SECLIST') renderSECLIST();
     else if (S.page === 'CRUOPT') renderCRUOPT();
     else if (S.page === 'SYSINFO') renderSYSINFO();
     else if (S.page === 'DATA') renderDATA();
@@ -1882,6 +2065,7 @@
 
     // highlight active function key (sub-pages light their parent key)
     var pageKey = (S.page === 'FUEL_SEL') ? 'FUEL' : (S.page === 'SYSINFO') ? 'ROUTE' :
+      (S.page === 'SECLIST') ? 'SEC' :
       (S.page === 'OPTIONS' || S.page === 'CFG' || S.page === 'MAINT' || S.page === 'TUNING' ||
        S.page === 'CALIB' || S.page === 'CALIBREG') ? 'SETTINGS' : S.page;
     fkEls.forEach(function (b) {
@@ -1916,7 +2100,8 @@
       S.calibTargetConfirm = false;
     }
     S.page = p;
-    if (p === 'ROUTE' || p === 'INIT' || p === 'DATA') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
+    if (p === 'ROUTE' || p === 'INIT' || p === 'DATA' || p === 'SEC') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
+    if (p === 'SEC') sendRaw({ cmd: 'sec.get' });
     if (p === 'TUNING') S.curveNeedsLoad = true;
     if (p === 'CALIB') sendRaw({ cmd: 'calibration.get' });
     render();
@@ -1958,6 +2143,14 @@
       else if (dir === 'd') S.calibPage = Math.min(cm, S.calibPage + 1);
       else if (dir === 'l') S.calibPage = Math.max(0, S.calibPage - CALIB_WIN);
       else if (dir === 'r') S.calibPage = Math.min(cm, S.calibPage + CALIB_WIN);
+      render();
+    } else if (S.page === 'SECLIST') {
+      // SECLIST scrolls like F-PLN: up/down by a line, left/right by a window
+      var sm = secListMaxScroll();
+      if (dir === 'u') S.secListPage = Math.max(0, S.secListPage - 1);
+      else if (dir === 'd') S.secListPage = Math.min(sm, S.secListPage + 1);
+      else if (dir === 'l') S.secListPage = Math.max(0, S.secListPage - SECLIST_WIN);
+      else if (dir === 'r') S.secListPage = Math.min(sm, S.secListPage + SECLIST_WIN);
       render();
     }
   }
