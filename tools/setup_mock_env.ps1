@@ -122,10 +122,15 @@ Write-File (Join-Path $bndDir 'Custom.4.0.binds') @'
 '@
 
 Write-Host 'Creating mock ED journal + live JSON files...'
+# The Loadout carries a real FSD module (Mandalay ships with the SCO drive)
+# plus engineering, and a Location event pins the current star system: the
+# Phase 8.1 route planner needs ship_state()['location'] as the plot origin
+# and loadout_raw's FSD for the fuel-safe profile / jump-range fallback.
 Write-File (Join-Path $jrnDir 'Journal.2026-07-06T140000.01.log') @'
 { "timestamp":"2026-07-06T14:00:00Z", "event":"Fileheader", "part":1, "language":"English/UK", "Odyssey":true, "gameversion":"4.0.0.1904", "build":"r308767/r0 " }
 { "timestamp":"2026-07-06T14:00:05Z", "event":"LoadGame", "Commander":"TestCmdr", "FID":"F0000000", "Horizons":true, "Odyssey":true, "Ship":"mandalay", "Ship_Localised":"Mandalay", "ShipID":1, "ShipName":"test", "ShipIdent":"TS-01", "FuelLevel":32.000000, "FuelCapacity":32.000000, "GameMode":"Solo", "Credits":1000000, "Loan":0 }
-{ "timestamp":"2026-07-06T14:00:06Z", "event":"Loadout", "Ship":"mandalay", "ShipID":1, "ShipName":"test", "ShipIdent":"TS-01", "HullValue":0, "ModulesValue":0, "HullHealth":1.000000, "UnladenMass":0.0, "CargoCapacity":0, "FuelCapacity":{ "Main":32.000000, "Reserve":0.630000 }, "MaxJumpRange":60.0, "Rebuy":0 }
+{ "timestamp":"2026-07-06T14:00:06Z", "event":"Loadout", "Ship":"mandalay", "ShipID":1, "ShipName":"test", "ShipIdent":"TS-01", "HullValue":0, "ModulesValue":0, "HullHealth":1.000000, "UnladenMass":223.2, "CargoCapacity":8, "FuelCapacity":{ "Main":32.000000, "Reserve":0.630000 }, "MaxJumpRange":60.0, "Rebuy":0, "Modules":[ { "Slot":"FrameShiftDrive", "Item":"int_hyperdrive_overcharge_size5_class5", "On":true, "Priority":0, "Health":1.000000, "Engineering":{ "Engineer":"Felicity Farseer", "BlueprintName":"FSD_LongRange", "Level":5, "Quality":1.0, "Modifiers":[ { "Label":"FSDOptimalMass", "Value":1762.5, "OriginalValue":1175.0 } ] } }, { "Slot":"Slot01_Size5", "Item":"int_fuelscoop_size5_class5", "On":true, "Priority":0, "Health":1.000000 } ] }
+{ "timestamp":"2026-07-06T14:00:07Z", "event":"Location", "StarSystem":"Devataru", "SystemAddress":5069269509577, "StarPos":[24.28125,19.34375,90.93750], "Body":"Devataru A", "BodyID":1, "BodyType":"Star", "Docked":false }
 '@
 
 $liveFiles = @{
