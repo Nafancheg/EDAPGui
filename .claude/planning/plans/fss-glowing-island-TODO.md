@@ -142,7 +142,7 @@
 
 - [x] 🟣 Выбор плоттера РЕШЁН (2026-07-13): **FAST/RISKY = Spansh neutron** (`/api/route`), **FUEL-SAFE = Spansh galaxy** (`/api/generic/route`, параметры FSD из журнального `Loadout`), **DIR-кандидаты/валидация = EDSM** (`sphere-systems`/`system`, поле `isScoopable`). Все три прогнаны живьём, форматы в дизайн-доке §2.
 - [x] 🟣 Итерация 1 ✅ (2026-07-13): `RoutePlanner.py` (FSD-таблицы, `ship_plot_params`, SpanshClient, EDSMClient, RoutePlanner-состояние) + `EDJournal.py` аддитивно `loadout_raw`/`max_jump_range` + QA `tools/qa_route_planner.py` — офлайн 15/15 PASS + live-дым (EDSM ок; neutron Sol→Sgr A* 356 прыжков). Находка live-дыма: EDSM 403 на UA `python-requests` → клиенты шлют `ED_Autopilot-RoutePlanner/1.0` (дизайн-док §2.3).
-- [ ] 🔵 Итерация 2: WS-команды `sec.plot/sec.get/sec.activate(stub)/dir.nearest/dir.set` в `webserver/server.py` (executor + broadcast, прецедент calibrate_target) + аддендум `docs/web_api_contract.md`. QA: aiohttp TestClient, без сети. Дизайн-док §5, §6.2.
+- [x] 🔵 Итерация 2 ✅ (2026-07-13): WS-команды `sec.plot/sec.get/sec.activate(stub)/dir.nearest/dir.set` в `webserver/server.py` (executor + broadcast, прецедент calibrate_target; `_get_route_planner` синглтон; COMPARE-primary через `route_primary_stats`/map_nav_route) + аддендум §7 в `docs/web_api_contract.md` + QA `tools/qa_route_ws.py` (aiohttp TestClient, fake-планнер, 8/8 PASS, без сети).
 - [ ] 🔵 [фронт, позже] Подключить страницы SEC F-PLN §3.4 / DIR §3.5 к командам (когда вернёмся к веб-морде).
 - [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR.
 

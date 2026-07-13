@@ -35,6 +35,20 @@ def _get_calib_store():
         _calib_store = CalibrationStore()
     return _calib_store
 
+# Route planner (SEC F-PLN / DIR, Phase 8.1). Same lazy-singleton pattern as
+# _get_calib_store(): RoutePlanner is only imported/instantiated on first use
+# so importing this module never touches the network.
+_route_planner = None
+
+
+def _get_route_planner(ed_ap):
+    global _route_planner
+    if _route_planner is None:
+        from RoutePlanner import RoutePlanner
+        _route_planner = RoutePlanner(ed_ap)
+    return _route_planner
+
+
 SCOOPABLE_CLASSES = {"K", "G", "B", "F", "O", "A", "M"}
 
 
@@ -62,6 +76,29 @@ def map_nav_route(data):
         if pos is not None:
             prev_pos = pos
     return {"active": True, "destination": systems[-1]["system"], "systems": systems}
+
+
+def route_primary_stats(ed_ap):
+    """Primary F-PLN stats for the SEC F-PLN COMPARE panel: {"jumps","dist_ly",
+    "scoops"} (all None when there is no active primary route). Reuses
+    map_nav_route so the jump/distance/scoop math lives in one place."""
+    data = ed_ap.nav_route.get_nav_route_data()
+    mapped = map_nav_route(data)
+    if not mapped["active"]:
+        return {"jumps": None, "dist_ly": None, "scoops": None}
+    systems = mapped["systems"]
+    dist_ly = round(sum(s["dist_ly"] for s in systems if s["dist_ly"] is not None), 2)
+    scoops = sum(1 for s in systems if s["scoopable"])
+    return {"jumps": len(systems) - 1, "dist_ly": dist_ly, "scoops": scoops}
+
+
+def _sec_route_payload(ed_ap, planner):
+    """RoutePlanner.snapshot() plus the COMPARE primary block for a sec_route
+    event. Secondary-side stats already live in snapshot["secondary"] -- only
+    the primary-route stats get added here (design/route-planner-backend.md 5)."""
+    data = planner.snapshot()
+    data["compare"] = {"primary": route_primary_stats(ed_ap)}
+    return data
 
 
 def map_ap_ckb(msg, body=None):
@@ -370,6 +407,71 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
             ed_ap.current_ship_cfg.setdefault(spd_key, {})[axis] = curve
             ed_ap.ap_ckb('log', f'RPY curve updated: {spd_key}/{axis}')
             await ws.send_str(json.dumps({"type": "curve_saved", "axis": axis}))
+    elif name == "sec.plot":
+        # blocking Spansh round-trip -- run off the event loop, same pattern
+        # as calibration.calibrate_target. plot_secondary() itself catches
+        # ordinary plotting failures into snapshot.error; only the busy-guard
+        # PlotError escapes as the executor future's exception.
+        planner = _get_route_planner(ed_ap)
+        loop = asyncio.get_running_loop()
+        fut = loop.run_in_executor(None, planner.plot_secondary, cmd.get("dest"), cmd.get("profile"))
+
+        def _sec_plot_done(f, _bc=broadcaster, _ap=ed_ap, _planner=planner):
+            exc = f.exception()
+            if exc is not None:
+                log.warning("sec.plot failed: %s", exc)
+                asyncio.ensure_future(_bc.broadcast({"type": "error", "text": str(exc)}))
+            else:
+                asyncio.ensure_future(_bc.broadcast(
+                    {"type": "sec_route", "data": _sec_route_payload(_ap, _planner)}))
+
+        fut.add_done_callback(_sec_plot_done)
+        await ws.send_str(json.dumps({"type": "sec_plot_started"}))
+    elif name == "sec.get":
+        planner = _get_route_planner(ed_ap)
+        await ws.send_str(json.dumps({"type": "sec_route", "data": _sec_route_payload(ed_ap, planner)}))
+    elif name == "sec.activate":
+        # Gated on the in-game part of Phase 8.1 (driving the galaxy map) --
+        # not in scope here, see design/route-planner-backend.md 1.
+        await ws.send_str(json.dumps({
+            "type": "error",
+            "text": "NOT AVAILABLE — требует ввода маршрута в игру (игровая часть 8.1)"}))
+    elif name == "dir.nearest":
+        planner = _get_route_planner(ed_ap)
+        loop = asyncio.get_running_loop()
+        fut = loop.run_in_executor(None, planner.nearest, bool(cmd.get("scoopable")))
+
+        def _dir_nearest_done(f, _bc=broadcaster, _planner=planner):
+            exc = f.exception()
+            if exc is not None:
+                log.warning("dir.nearest failed: %s", exc)
+                asyncio.ensure_future(_bc.broadcast({"type": "error", "text": str(exc)}))
+            else:
+                asyncio.ensure_future(_bc.broadcast({"type": "dir_state", "data": _planner.snapshot()}))
+
+        fut.add_done_callback(_dir_nearest_done)
+        await ws.send_str(json.dumps({"type": "dir_started"}))
+    elif name == "dir.set":
+        # direct_to() is blocking (EDSM network calls) and returns False for
+        # an unknown system rather than raising -- still guard the executor's
+        # exception path for the (rarer) location/network-failure case.
+        planner = _get_route_planner(ed_ap)
+        loop = asyncio.get_running_loop()
+        fut = loop.run_in_executor(None, planner.direct_to, cmd.get("system"))
+
+        def _dir_set_done(f, _bc=broadcaster, _planner=planner):
+            try:
+                ok = f.result()
+            except Exception as exc:  # noqa: BLE001 — surface any PlotError/etc.
+                log.warning("dir.set failed: %s", exc)
+                asyncio.ensure_future(_bc.broadcast({"type": "error", "text": str(exc)}))
+                return
+            if not ok:
+                asyncio.ensure_future(_bc.broadcast({"type": "error", "text": "INVALID"}))
+            else:
+                asyncio.ensure_future(_bc.broadcast({"type": "dir_state", "data": _planner.snapshot()}))
+
+        fut.add_done_callback(_dir_set_done)
     else:
         await ws.send_str(json.dumps({"type": "error", "text": f"unknown command: {name!r}"}))
 

@@ -403,3 +403,76 @@ should stay a separate channel; the new web server's WebSocket/HTTP contract
 does not need to subsume it, though the two overlap conceptually (both are
 "external control of the core") and could eventually share the same
 underlying command dispatch if convenient.
+
+---
+
+## 7. Route planner commands (Phase 8.1, iteration 2)
+
+New WebSocket commands backing the SEC F-PLN (secondary route) and DIR
+(direct-to) MCDU pages, added on top of the existing `_dispatch_command`
+elif-chain in `webserver/server.py`. Design reference:
+`design/route-planner-backend.md` (§4 `RoutePlanner.py`, §5 this table).
+The planner instance is a lazy module-level singleton
+(`_get_route_planner(ed_ap)`, same pattern as `_get_calib_store()`), so
+`import webserver.server` never touches the network.
+
+**Scope note:** everything here runs on the laptop against the public Spansh
++ EDSM APIs, without the game. `sec.activate` (actually entering the plotted
+route into the game via the galaxy map) is gated on the in-game part of
+Phase 8.1 and is a stub for now — see §1 of the design doc.
+
+| Command | Params | Response / broadcast |
+|---|---|---|
+| `sec.plot` | `profile: "fuel_safe"\|"fast"`, `dest?: str` | ack `{"type":"sec_plot_started"}` on the requesting socket, then (after the blocking Spansh round-trip runs in an executor) broadcast `{"type":"sec_route","data":<sec_route data>}` to all clients. Ordinary plotting failures (no destination, no loadout, unknown profile, HTTP/timeout errors) are captured inside `data.error`, not raised — the broadcast still fires. Only the busy-guard (`plot_secondary` called while a plot is already running) surfaces as `{"type":"error","text":"PLOT IN PROGRESS"}` instead of a broadcast. |
+| `sec.get` | — | direct reply (not broadcast) `{"type":"sec_route","data":<sec_route data>}` — same payload shape as the `sec.plot` broadcast, for a client that just (re)connected. |
+| `sec.activate` | — | always `{"type":"error","text":"NOT AVAILABLE — требует ввода маршрута в игру (игровая часть 8.1)"}`. Stub until the in-game galaxy-map driving is implemented. |
+| `dir.nearest` | `scoopable: bool` | ack `{"type":"dir_started"}`, then broadcast `{"type":"dir_state","data":<planner snapshot>}` once the EDSM sphere-cascade lookup (executor) finishes. A failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}` instead. |
+| `dir.set` | `system: str` | no ack — runs `direct_to(system)` in an executor (blocking EDSM call), then broadcasts `{"type":"dir_state","data":<planner snapshot>}` on success. An unresolvable system name broadcasts `{"type":"error","text":"INVALID"}`; a hard failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}`. |
+
+### `sec_route` payload (`data`)
+
+The planner `snapshot()` (see below) plus one extra key:
+
+```json
+{"secondary": <Route|null>, "dir": <DirCandidate|null>, "busy": bool, "error": str|null,
+ "compare": {"primary": {"jumps": int|null, "dist_ly": float|null, "scoops": int|null}}}
+```
+
+`compare.primary` is built server-side from the active F-PLN
+(`map_nav_route(ed_ap.nav_route.get_nav_route_data())`, §1 above): `jumps` =
+`len(systems) - 1`, `dist_ly` = Σ per-hop `dist_ly`, `scoops` = count of
+scoopable-class hops; all three are `null` when there is no active primary
+route. Secondary-side comparison numbers (jumps/dist_ly/scoops/risk) are not
+duplicated into `compare` — the client reads them straight from
+`data.secondary`.
+
+### `dir_state` payload (`data`)
+
+The planner `snapshot()` as-is (no `compare` key — DIR has nothing to compare
+against):
+
+```json
+{"secondary": <Route|null>, "dir": <DirCandidate|null>, "busy": bool, "error": str|null}
+```
+
+### `Route` dict (`secondary`, when present)
+
+```json
+{"profile": "FUEL-SAFE"|"FAST", "source": "...", "destination": "...",
+ "jumps": int, "dist_ly": float, "scoops": int|null, "risk": "LOW"|"HIGH",
+ "plotted_at": "<iso>",
+ "systems": [{"system": "...", "dist_ly": float|null, "scoopable": bool|null,
+              "neutron": bool, "must_refuel": bool}, ...]}
+```
+
+`systems[0]` is the starting system (`dist_ly` null). FUEL-SAFE models every
+jump's fuel use (`scoops` = count of `must_refuel` hops, `risk` "LOW"); FAST
+is the neutron-plotter's waypoint list (fuel not modelled, `scoops` null,
+`risk` "HIGH"). See `design/route-planner-backend.md` §4 for the full
+per-profile breakdown.
+
+### `DirCandidate` dict (`dir`, when present)
+
+```json
+{"system": "...", "star_class": "...", "dist_ly": float|null, "scoopable": bool}
+```
