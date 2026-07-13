@@ -969,7 +969,7 @@
   }
 
   function renderSEC() {
-    setHeader('SEC F-PLN', 'SECONDARY ROUTE');
+    setHeader('RTE PLAN', 'ROUTE PLANNER');
     clearActions();
     for (var i = 0; i < 6; i++) clearRow(i);
 
@@ -1111,7 +1111,7 @@
     var sys = secListSystems();
     var route = (S.sec && S.sec.secondary) || null;
     if (!route || sys.length === 0) {
-      setHeader('SEC LIST', '---');
+      setHeader('RTE LIST', '---');
       fill(2, { lv: 'NO SECONDARY ROUTE', lvs: 's-muted', center: true });
       fill(5, { lv: '<RETURN', lvs: 's-normal' });
       actions.L[5] = { press: function () { setPage('SEC'); }, input: null };
@@ -1121,7 +1121,7 @@
     clampSecListPage();
     var top = S.secListPage;
     var bottom = Math.min(top + SECLIST_WIN, sys.length);
-    setHeader('SEC LIST', (top + 1) + '-' + bottom + '/' + sys.length + ' ↕');
+    setHeader('RTE LIST', (top + 1) + '-' + bottom + '/' + sys.length + ' ↕');
 
     for (var r = 0; r < SECLIST_WIN; r++) {
       var gi = top + r;
@@ -2017,7 +2017,7 @@
 
   // ---- top-level render ----
   // DIR doubles as "back to the main screen" until it gets a real Direct-To page
-  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'SEC F-PLN': 'SEC', 'FUEL PRED': 'FUEL', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
+  var PAGE_FOR_KEY = { 'DIR': 'DIR', 'INIT': 'INIT', 'PROG': 'PROG', 'F-PLN': 'ROUTE', 'RTE PLAN': 'SEC', 'FUEL PRED': 'FUEL', 'CRU OPT': 'CRUOPT', 'DATA': 'DATA', 'MCDU MENU': 'SETTINGS' };
 
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
@@ -2197,8 +2197,10 @@
   document.querySelectorAll('[data-slew]').forEach(function (b) {
     b.addEventListener('click', function () {
       var d = b.getAttribute('data-slew');
-      if (d === 'airport') flash('PAGE INOP', 1500);
-      else slew(d);
+      if (d === 'clr') {           // ex-AIRPORT: dedicated scratchpad clear
+        S.scratch = '';
+        renderScratch();
+      } else slew(d);
     });
   });
 

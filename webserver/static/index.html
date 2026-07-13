@@ -80,15 +80,17 @@
 
     <!-- function keys -->
     <div class="funckeys">
+      <!-- row 1: the route cluster sits together (customer decision
+           2026-07-13, Замечание 19): DIR · PROG · INIT · F-PLN · RTE PLAN -->
       <button type="button" class="fk" data-key="DIR">DIR</button>
       <button type="button" class="fk" data-key="PROG">PROG<span id="ledProg" class="fk-led"></span></button>
-      <button type="button" class="fk" data-key="PERF">PERF</button>
       <button type="button" class="fk" data-key="INIT">INIT</button>
-      <button type="button" class="fk" data-key="DATA">DATA</button>
       <button type="button" class="fk" data-key="F-PLN">F-PLN</button>
+      <button type="button" class="fk" data-key="RTE PLAN">RTE PLAN</button>
+      <button type="button" class="fk" data-key="DATA">DATA</button>
+      <button type="button" class="fk" data-key="PERF">PERF</button>
       <button type="button" class="fk" data-key="CRU OPT">CRU OPT</button>
       <button type="button" class="fk" data-key="FUEL PRED">FUEL PRED<span id="ledFuel" class="fk-led"></span></button>
-      <button type="button" class="fk" data-key="SEC F-PLN">SEC F-PLN</button>
       <button type="button" class="fk" data-key="ATC COMM">ATC COMM</button>
       <button type="button" class="fk" data-key="MCDU MENU">MCDU MENU</button>
       <button type="button" class="fk" data-key="AUTO TUNE">AUTO TUNE</button>
@@ -96,7 +98,9 @@
 
     <!-- slew row -->
     <div class="slewrow">
-      <button type="button" class="fk airport" data-slew="airport">AIRPORT</button>
+      <!-- AIRPORT has no meaning in ED; repurposed as scratchpad CLR
+           (customer decision 2026-07-13, Замечание 19) -->
+      <button type="button" class="fk airport" data-slew="clr" aria-label="clear scratchpad">CLR</button>
       <button type="button" class="slew" data-slew="l" aria-label="slew left">&#8592;</button>
       <button type="button" class="slew" data-slew="u" aria-label="slew up">&#8593;</button>
       <button type="button" class="slew" data-slew="d" aria-label="slew down">&#8595;</button>
