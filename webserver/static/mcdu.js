@@ -2204,6 +2204,33 @@
     });
   });
 
+  // ---- on-screen keypad (KBD toggle in the slew row) ----
+  // Keys write through spInput + an 'input' event so the same charset filter
+  // and length cap apply as for real typing; toggle state survives reloads.
+  var kbdPanel = $('kbdPanel');
+  var kbdToggle = $('kbdToggle');
+  function kbdShow(on) {
+    if (on) kbdPanel.removeAttribute('hidden');
+    else kbdPanel.setAttribute('hidden', '');
+    kbdToggle.classList.toggle('fk-active', on);
+    try { localStorage.setItem('mcduKbd', on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+  kbdToggle.addEventListener('click', function () { kbdShow(kbdPanel.hasAttribute('hidden')); });
+  try { if (localStorage.getItem('mcduKbd') === '1') kbdShow(true); } catch (e) { /* private mode */ }
+  kbdPanel.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    if (S.flash) return;                       // don't type over an active flash
+    if (t.getAttribute('data-bs')) {
+      spInput.value = S.scratch.slice(0, -1);
+    } else {
+      var ch = t.getAttribute('data-ch');
+      if (ch === null) return;
+      spInput.value = S.scratch + ch;
+    }
+    spInput.dispatchEvent(new Event('input'));
+  });
+
   // STOP ALL: guarded hardware button (outside the LSK grid).
   // Tap the lid to lift it, then press the red button; the lid re-closes on
   // a second tap, on any click elsewhere, or automatically after 4 s.

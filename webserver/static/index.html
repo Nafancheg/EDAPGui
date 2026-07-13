@@ -101,6 +101,7 @@
       <!-- AIRPORT has no meaning in ED; repurposed as scratchpad CLR
            (customer decision 2026-07-13, Замечание 19) -->
       <button type="button" class="fk airport" data-slew="clr" aria-label="clear scratchpad">CLR</button>
+      <button type="button" class="fk kbdtoggle" id="kbdToggle" aria-label="toggle keypad">KBD</button>
       <button type="button" class="slew" data-slew="l" aria-label="slew left">&#8592;</button>
       <button type="button" class="slew" data-slew="u" aria-label="slew up">&#8593;</button>
       <button type="button" class="slew" data-slew="d" aria-label="slew down">&#8595;</button>
@@ -109,6 +110,55 @@
         <button type="button" id="estopBtn" class="estop-btn" aria-label="STOP ALL">STOP</button>
         <div id="estopCover" class="estop-cover" role="button" aria-label="lift STOP ALL guard"></div>
       </div>
+    </div>
+
+    <!-- on-screen alphanumeric keypad (KBD toggle in the slew row); keys
+         feed the scratchpad through the same input filter as real typing -->
+    <div id="kbdPanel" class="kbd-panel" hidden>
+      <button type="button" class="fk kbd-key" data-ch="1">1</button>
+      <button type="button" class="fk kbd-key" data-ch="2">2</button>
+      <button type="button" class="fk kbd-key" data-ch="3">3</button>
+      <button type="button" class="fk kbd-key" data-ch="4">4</button>
+      <button type="button" class="fk kbd-key" data-ch="5">5</button>
+      <button type="button" class="fk kbd-key" data-ch="6">6</button>
+      <button type="button" class="fk kbd-key" data-ch="7">7</button>
+      <button type="button" class="fk kbd-key" data-ch="8">8</button>
+      <button type="button" class="fk kbd-key" data-ch="9">9</button>
+      <button type="button" class="fk kbd-key" data-ch="0">0</button>
+      <button type="button" class="fk kbd-key" data-ch="A">A</button>
+      <button type="button" class="fk kbd-key" data-ch="B">B</button>
+      <button type="button" class="fk kbd-key" data-ch="C">C</button>
+      <button type="button" class="fk kbd-key" data-ch="D">D</button>
+      <button type="button" class="fk kbd-key" data-ch="E">E</button>
+      <button type="button" class="fk kbd-key" data-ch="F">F</button>
+      <button type="button" class="fk kbd-key" data-ch="G">G</button>
+      <button type="button" class="fk kbd-key" data-ch="H">H</button>
+      <button type="button" class="fk kbd-key" data-ch="I">I</button>
+      <button type="button" class="fk kbd-key" data-ch="J">J</button>
+      <button type="button" class="fk kbd-key" data-ch="K">K</button>
+      <button type="button" class="fk kbd-key" data-ch="L">L</button>
+      <button type="button" class="fk kbd-key" data-ch="M">M</button>
+      <button type="button" class="fk kbd-key" data-ch="N">N</button>
+      <button type="button" class="fk kbd-key" data-ch="O">O</button>
+      <button type="button" class="fk kbd-key" data-ch="P">P</button>
+      <button type="button" class="fk kbd-key" data-ch="Q">Q</button>
+      <button type="button" class="fk kbd-key" data-ch="R">R</button>
+      <button type="button" class="fk kbd-key" data-ch="S">S</button>
+      <button type="button" class="fk kbd-key" data-ch="T">T</button>
+      <button type="button" class="fk kbd-key" data-ch="U">U</button>
+      <button type="button" class="fk kbd-key" data-ch="V">V</button>
+      <button type="button" class="fk kbd-key" data-ch="W">W</button>
+      <button type="button" class="fk kbd-key" data-ch="X">X</button>
+      <button type="button" class="fk kbd-key" data-ch="Y">Y</button>
+      <button type="button" class="fk kbd-key" data-ch="Z">Z</button>
+      <button type="button" class="fk kbd-key" data-ch=".">.</button>
+      <button type="button" class="fk kbd-key" data-ch="/">/</button>
+      <button type="button" class="fk kbd-key" data-ch="'">'</button>
+      <button type="button" class="fk kbd-key" data-ch="*">*</button>
+      <button type="button" class="fk kbd-key" data-ch="-">-</button>
+      <button type="button" class="fk kbd-key" data-ch="+">+</button>
+      <button type="button" class="fk kbd-key kbd-wide" data-ch=" ">SP</button>
+      <button type="button" class="fk kbd-key kbd-bs" data-bs="1" aria-label="backspace">&#9003;</button>
     </div>
 
     <!-- RPY curve editor panel (PERF page) -->

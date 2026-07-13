@@ -347,6 +347,19 @@ body{
 }
 .slew:hover{ border-color:var(--amber); }
 
+/* ---- on-screen keypad (KBD toggle): same key idiom as the function keys ---- */
+.kbd-panel{
+  display:grid;
+  grid-template-columns:repeat(10,1fr);
+  gap:6px;
+  margin-top:10px;
+}
+.kbd-panel[hidden]{ display:none; }
+.kbd-key{ min-height:40px; font-size:12.5px; color:var(--amber); }
+.kbd-wide{ grid-column:span 6; }
+.kbd-bs{ grid-column:span 2; font-size:15px; }
+.kbdtoggle{ flex:0 0 auto; padding:0 14px; }
+
 /* ---- STOP ALL: guarded emergency button (outside the LSK grid) ----
    Same height as a slew key, function-key width, far right of the slew row.
    A hinged metal lid must be lifted (tap) before the red button can be pressed. */
