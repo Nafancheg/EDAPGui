@@ -225,6 +225,8 @@ class EDJournal:
             'status': 'in_space',
             'type': None,
             'location': None,
+            'loadout_raw': None,
+            'max_jump_range': None,
             'star_class': None,
             'target': None,
             'fighter_destroyed': False,
@@ -462,6 +464,8 @@ class EDJournal:
             elif log_event == 'Loadout':
                 self.ship['type'] = log['Ship'].lower()
                 self.ship['ship_size'] = get_ship_size(log['Ship'])
+                self.ship['loadout_raw'] = log
+                self.ship['max_jump_range'] = log.get('MaxJumpRange')
                 self.ship['cargo_capacity'] = log['CargoCapacity']
                 self.ship['has_fuel_scoop'] = check_fuel_scoop(log['Modules'])
                 self.ship['has_adv_dock_comp'] = check_adv_docking_computer(log['Modules'])

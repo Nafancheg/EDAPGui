@@ -14,7 +14,7 @@
 - ✅ **Фаза 7.3.4 завершена** (DATA·SYSTEM DATA; бэкенд сеттер-диспатч; MCDU MENU·SETTINGS §3.9; INIT·PREFLIGHT полный; PERF→подстраница SETTINGS «RPY TUNING», PERF-клавиша INOP). Замечание 14 в спеке. Коммиты `2514b0d`,`eff958c`,`d709e16`,`e4f058c`.
 - ✅ **Фаза 7.3.5 завершена** (каркасы DIR·DIRECT-TO §3.5 + SEC F-PLN §3.4 с двухшаговым ACTIVATE, коммит `db6a1b3`).
 - ✅ **Бэкенд персиста веб-настроек готов** (`config.save`/`load`, коммит `08c1b8c`).
-- ➡️ **ТЕКУЩАЯ: витрина MCDU (7.3) собрана, персист готов.** Осталось в Фазе 7: проверка Фазы 7 на игровом ПК (планшет по IP), затем 7.4 (удаление tkinter после паритета). Разработку без игры на этом ноуте по Фазе 7 в основном исчерпали.
+- ➡️ **ТЕКУЩАЯ (2026-07-13): бэкенд плоттера маршрутов — 8.1, ноутбучная часть** (решение заказчика: веб-морду не трогаем, берём новую фичу). Дизайн готов: `design/route-planner-backend.md`. По Фазе 7 осталось: проверка на игровом ПК (планшет по IP), затем 7.4-финал (удаление tkinter).
 - ⛔ Фазы 3–6 gated на игру (решение 2026-07-07: Фаза 7 перед 3–4; обоснование в ченджлоге).
 
 **🎮 Висит на игровом ПК (при ближайшей сессии с ED):**
@@ -136,10 +136,15 @@
 > ⛔ **GATED НА ИГРУ + БЭКЕНД.** ТЗ в `design/mcdu-avionics-prompt.md`; **витрина (страницы/слоты/валидации) задана спекой `design/mcdu-button-map.md`**: DIR §3.5, SEC F-PLN §3.4, LND §3.1 (UI-каркасы строятся в 7.3.1/7.3.5). Контекст в [[mcdu-route-model]], [[mcdu-phase-model]]. Обе — крупные НОВЫЕ возможности: MCDU лишь витрина, под ней сервис планирования/навигации, которого пока нет. После Фазы 7 и при доступе к игре.
 
 ### 8.1 — Построение маршрутов в приложении (без галакарты)
-- [ ] 🟣 Внешний плоттер: Spansh (neutron / fuel-economy) и/или EDSM для соседних систем; выбор источника — открытое решение этапа.
-- [ ] 🟣 Два профиля прокладки: **fuel-safe** (обязательно scoopable) ⇄ **fast/risky** → SEC F-PLN (secondary), свап primary⇄secondary + COMPARE.
-- [ ] 🟣 Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели.
-- [ ] 🟣 DIR (direct-to): ближайшая scoopable / ближайшая система / система из scratchpad.
+
+> ✅ **Бэкенд-часть РАЗGATED (2026-07-13):** Spansh/EDSM — публичные HTTP API, проверены живьём с ноута.
+> 📐 **Дизайн утверждён: `design/route-planner-backend.md`** (проверенные форматы API, модуль `RoutePlanner.py`, WS-команды, итерации+QA). Фронт (mcdu.js) НЕ трогаем до отдельной итерации.
+
+- [x] 🟣 Выбор плоттера РЕШЁН (2026-07-13): **FAST/RISKY = Spansh neutron** (`/api/route`), **FUEL-SAFE = Spansh galaxy** (`/api/generic/route`, параметры FSD из журнального `Loadout`), **DIR-кандидаты/валидация = EDSM** (`sphere-systems`/`system`, поле `isScoopable`). Все три прогнаны живьём, форматы в дизайн-доке §2.
+- [x] 🟣 Итерация 1 ✅ (2026-07-13): `RoutePlanner.py` (FSD-таблицы, `ship_plot_params`, SpanshClient, EDSMClient, RoutePlanner-состояние) + `EDJournal.py` аддитивно `loadout_raw`/`max_jump_range` + QA `tools/qa_route_planner.py` — офлайн 15/15 PASS + live-дым (EDSM ок; neutron Sol→Sgr A* 356 прыжков). Находка live-дыма: EDSM 403 на UA `python-requests` → клиенты шлют `ED_Autopilot-RoutePlanner/1.0` (дизайн-док §2.3).
+- [ ] 🔵 Итерация 2: WS-команды `sec.plot/sec.get/sec.activate(stub)/dir.nearest/dir.set` в `webserver/server.py` (executor + broadcast, прецедент calibrate_target) + аддендум `docs/web_api_contract.md`. QA: aiohttp TestClient, без сети. Дизайн-док §5, §6.2.
+- [ ] 🔵 [фронт, позже] Подключить страницы SEC F-PLN §3.4 / DIR §3.5 к командам (когда вернёмся к веб-морде).
+- [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR.
 
 ### 8.2 — Режимы посадки на планету (фаза LND)
 - [ ] 🟣 Последовательность: drop to Orbital Cruise → de-orbit/glide → surface approach → target (POI ИЛИ координаты) → final descent/touchdown. Отдельная фаза, НЕ часть станционной ARRIVAL.
