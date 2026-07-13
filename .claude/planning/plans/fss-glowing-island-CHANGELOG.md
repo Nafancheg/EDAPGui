@@ -133,3 +133,27 @@ ED_AP.py 4574→1527 строк; вся лётная логика в `services/`
 - **Отложено** (Ф3/уточнение): интерлок FAST TRAVEL и scoop-skip (пересчёт топлива).
 
 **Правки спеки:** замечания 11, 12, 13 зафиксированы в `design/mcdu-button-map.md`.
+
+---
+
+## ФАЗА 8.1 — Бэкенд плоттера маршрутов (ноутбучная часть) ✅ (2026-07-13)
+
+> Решение заказчика: веб-морду не трогаем, берём фичу, разрабатываемую без игры. Бэкенд-часть 8.1 разgateна: Spansh/EDSM — публичные HTTP API, проверены живьём с ноута ДО реализации. **Дизайн-док: `design/route-planner-backend.md`** (нормативный: проверенные форматы API, структура модуля, WS-контракт, итерации+QA).
+
+### Выбор плоттера (закрыт открытый вопрос из [[mcdu-route-model]])
+- **FAST/RISKY** = Spansh neutron (`POST /api/route` → job → poll `/api/results/{job}`); `system_jumps` = waypoint'ы перепрокладки, `jumps` = прыжков на лег, топливо НЕ моделируется → risk HIGH.
+- **FUEL-SAFE** = Spansh galaxy (`POST /api/generic/route`): параметры FSD из журнального `Loadout` (таблицы констант size/class + инженерия из `Engineering.Modifiers`); результат по-прыжковый с `fuel_used`/`must_refuel`/`is_scoopable` → scoops и risk LOW считаются честно.
+- **DIR-кандидаты/валидация** = EDSM `sphere-systems`/`system` (поле `isScoopable` первичной звезды, каскад радиусов 15→30→50 LY).
+
+### Итерация 1 — `RoutePlanner.py` (🟣 Opus-субагент, коммит `dc65ab0`)
+- `RoutePlanner.py` в корне (прецедент CalibrationStore): FSD-таблицы (вкл. SCO/MkII/guardian-бустеры), `ship_plot_params()`, `max_range_from_loadout()` (fallback-формула дальности), SpanshClient/EDSMClient с инжектируемой session (офлайн-QA), нормализация обоих профилей в единый Route-dict, RoutePlanner с busy-guard/snapshot; PlotError на всех путях отказа. Никаких импортов ED_AP на верхнем уровне.
+- `EDJournal.py` аддитивно: `loadout_raw` (сырой dict события Loadout) + `max_jump_range` (`MaxJumpRange`, ранее не читался).
+- QA `tools/qa_route_planner.py`: 15/15 PASS офлайн (fake-session) + опция `--live`.
+- ⚠️ **Находка live-дыма:** Cloudflare EDSM отдаёт 403 на дефолтный UA `python-requests` (curl проходит!) — клиенты обязаны слать идентифицирующий UA (`ED_Autopilot-RoutePlanner/1.0`). Live после фикса: EDSM ок, neutron Sol→Sgr A* = 356 прыжков / 25 900 LY. **Урок: дымить внешние API реальным HTTP-клиентом проекта, а не только curl — WAF различает клиентов.**
+
+### Итерация 2 — WS-команды (🔵 Sonnet-субагент, коммит `e3a6ce6`)
+- `webserver/server.py`: `sec.plot` (ack `sec_plot_started` → executor → broadcast `sec_route`), `sec.get` (синхронно, + `compare.primary` из `route_primary_stats()` поверх map_nav_route — планнер primary не считает), `sec.activate` (заглушка NOT AVAILABLE до игровой части), `dir.nearest` (ack `dir_started` → broadcast `dir_state`), `dir.set` (False → `INVALID`). `_get_route_planner()` — ленивый синглтон по образцу `_get_calib_store()`. Busy-guard прилетает исключением из executor-future → `{"type":"error"}`; остальные ошибки планнер кладёт в `snapshot.error`.
+- `docs/web_api_contract.md` §7: контракт команд/событий, форматы Route/DirCandidate.
+- QA `tools/qa_route_ws.py`: aiohttp TestClient поверх `create_app` с fake-ядром и fake-планнером, 8/8 PASS без сети; регресс qa_route_planner 15/15; `import EDAPGui` ок.
+
+**Осталось в 8.1 (в TODO):** подключение страниц SEC F-PLN §3.4 / DIR §3.5 к командам (фронт, когда вернёмся к веб-морде); ⛔игра — ввод маршрута в игру (галакарта/нав-панель) → настоящий `sec.activate` и исполнение DIR.

@@ -14,7 +14,7 @@
 - ✅ **Фаза 7.3.4 завершена** (DATA·SYSTEM DATA; бэкенд сеттер-диспатч; MCDU MENU·SETTINGS §3.9; INIT·PREFLIGHT полный; PERF→подстраница SETTINGS «RPY TUNING», PERF-клавиша INOP). Замечание 14 в спеке. Коммиты `2514b0d`,`eff958c`,`d709e16`,`e4f058c`.
 - ✅ **Фаза 7.3.5 завершена** (каркасы DIR·DIRECT-TO §3.5 + SEC F-PLN §3.4 с двухшаговым ACTIVATE, коммит `db6a1b3`).
 - ✅ **Бэкенд персиста веб-настроек готов** (`config.save`/`load`, коммит `08c1b8c`).
-- ➡️ **ТЕКУЩАЯ (2026-07-13): бэкенд плоттера маршрутов — 8.1, ноутбучная часть** (решение заказчика: веб-морду не трогаем, берём новую фичу). Дизайн готов: `design/route-planner-backend.md`. По Фазе 7 осталось: проверка на игровом ПК (планшет по IP), затем 7.4-финал (удаление tkinter).
+- ✅ **8.1 бэкенд плоттера ЗАВЕРШЁН (2026-07-13)** → ченджлог; в 8.1 остались фронт-подключение (позже) и ⛔игра-часть. По Фазе 7 осталось: проверка на игровом ПК (планшет по IP), затем 7.4-финал (удаление tkinter). Ноутбучные крупняки: фронт SEC/DIR (если решим трогать веб) либо 8.2-математика LND.
 - ⛔ Фазы 3–6 gated на игру (решение 2026-07-07: Фаза 7 перед 3–4; обоснование в ченджлоге).
 
 **🎮 Висит на игровом ПК (при ближайшей сессии с ED):**
@@ -137,13 +137,9 @@
 
 ### 8.1 — Построение маршрутов в приложении (без галакарты)
 
-> ✅ **Бэкенд-часть РАЗGATED (2026-07-13):** Spansh/EDSM — публичные HTTP API, проверены живьём с ноута.
-> 📐 **Дизайн утверждён: `design/route-planner-backend.md`** (проверенные форматы API, модуль `RoutePlanner.py`, WS-команды, итерации+QA). Фронт (mcdu.js) НЕ трогаем до отдельной итерации.
+> ✅ **Бэкенд-часть СДЕЛАНА (2026-07-13, коммиты `dc65ab0`+`e3a6ce6`) → ченджлог.** Дизайн-док: `design/route-planner-backend.md` (нормативный). Итого: `RoutePlanner.py` (Spansh neutron=FAST / galaxy=FUEL-SAFE / EDSM=DIR), WS-команды `sec.*`/`dir.*`, контракт в `docs/web_api_contract.md` §7, QA `tools/qa_route_planner.py` (15/15) + `tools/qa_route_ws.py` (8/8). ⚠️ EDSM требует кастомный User-Agent (403 на `python-requests`).
 
-- [x] 🟣 Выбор плоттера РЕШЁН (2026-07-13): **FAST/RISKY = Spansh neutron** (`/api/route`), **FUEL-SAFE = Spansh galaxy** (`/api/generic/route`, параметры FSD из журнального `Loadout`), **DIR-кандидаты/валидация = EDSM** (`sphere-systems`/`system`, поле `isScoopable`). Все три прогнаны живьём, форматы в дизайн-доке §2.
-- [x] 🟣 Итерация 1 ✅ (2026-07-13): `RoutePlanner.py` (FSD-таблицы, `ship_plot_params`, SpanshClient, EDSMClient, RoutePlanner-состояние) + `EDJournal.py` аддитивно `loadout_raw`/`max_jump_range` + QA `tools/qa_route_planner.py` — офлайн 15/15 PASS + live-дым (EDSM ок; neutron Sol→Sgr A* 356 прыжков). Находка live-дыма: EDSM 403 на UA `python-requests` → клиенты шлют `ED_Autopilot-RoutePlanner/1.0` (дизайн-док §2.3).
-- [x] 🔵 Итерация 2 ✅ (2026-07-13): WS-команды `sec.plot/sec.get/sec.activate(stub)/dir.nearest/dir.set` в `webserver/server.py` (executor + broadcast, прецедент calibrate_target; `_get_route_planner` синглтон; COMPARE-primary через `route_primary_stats`/map_nav_route) + аддендум §7 в `docs/web_api_contract.md` + QA `tools/qa_route_ws.py` (aiohttp TestClient, fake-планнер, 8/8 PASS, без сети).
-- [ ] 🔵 [фронт, позже] Подключить страницы SEC F-PLN §3.4 / DIR §3.5 к командам (когда вернёмся к веб-морде).
+- [ ] 🔵 [фронт, позже] Подключить страницы SEC F-PLN §3.4 / DIR §3.5 к командам `sec.*`/`dir.*` (когда вернёмся к веб-морде); формат данных — `docs/web_api_contract.md` §7.
 - [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR.
 
 ### 8.2 — Режимы посадки на планету (фаза LND)
