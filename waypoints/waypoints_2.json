@@ -1,0 +1,70 @@
+{
+    "GlobalShoppingList": {
+        "SystemName": "",
+        "StationName": "",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": false,
+        "Comment": "",
+        "BuyCommodities": {},
+        "SellCommodities": {}
+    },
+    "0": {
+        "SystemName": "Hyades Sector BM-Q a20-0",
+        "StationName": "Haro Hub",
+        "GalaxyBookmarkType": "Station",
+        "GalaxyBookmarkNumber": 2,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": true,
+        "Comment": "",
+        "BuyCommodities": {
+            "Средство очистки почвы": 9999
+        },
+        "SellCommodities": {
+            "Галлит": 9999
+        }
+    },
+    "1": {
+        "SystemName": "Hixkaramu",
+        "StationName": "Heng Orbital",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": false,
+        "Comment": "",
+        "BuyCommodities": {
+            "Галлит": 9999
+        },
+        "SellCommodities": {
+            "Средство очистки почвы": 9999
+        }
+    },
+    "2": {
+        "SystemName": "REPEAT",
+        "StationName": "",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": false,
+        "Comment": "",
+        "BuyCommodities": {},
+        "SellCommodities": {}
+    }
+}

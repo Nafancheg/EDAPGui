@@ -1,0 +1,55 @@
+{
+    "GlobalShoppingList": {
+        "SystemName": "",
+        "StationName": "",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "SellCommodities": {},
+        "BuyCommodities": {},
+        "Comment": "",
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": true,
+        "Completed": false
+    },
+    "1": {
+        "SystemName": "Hyades Sector BM-Q a20-0",
+        "StationName": "Haro Hub",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "SellCommodities": {
+            "Лепидолит": 9999
+        },
+        "BuyCommodities": {
+            "Средство очистки почвы": 9999
+        },
+        "Comment": "",
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": true
+    },
+    "2": {
+        "SystemName": "Cennicenino",
+        "StationName": "Zahn Enterprise",
+        "GalaxyBookmarkType": "",
+        "GalaxyBookmarkNumber": 0,
+        "SystemBookmarkType": "",
+        "SystemBookmarkNumber": 0,
+        "SellCommodities": {
+            "Средство очистки почвы": 9999
+        },
+        "BuyCommodities": {
+            "Лепидолит": 9999
+        },
+        "Comment": "",
+        "UpdateCommodityCount": false,
+        "FleetCarrierTransfer": false,
+        "Skip": false,
+        "Completed": true
+    }
+}

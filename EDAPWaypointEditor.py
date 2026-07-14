@@ -358,10 +358,25 @@ class WaypointEditorTab:
         self.gbl_buy_commodities_list = self.create_commodity_list(gbl_buy_commodities_frame, "gbl_buy")
 
     def open_inara_import_window(self):
+        # Avoid stacking multiple modal windows (each with its own grab_set()),
+        # which can leave keyboard/paste focus stuck on a stale window.
+        existing = getattr(self, '_inara_import_window', None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
+
         inara_window = tk.Toplevel(self.frame)
+        self._inara_import_window = inara_window
         inara_window.title(self.t('WPT_WINDOW_IMPORT_FROM_INARA', 'Import from Inara'))
         inara_window.transient(self.root)
         inara_window.grab_set()
+
+        def on_close():
+            self._inara_import_window = None
+            inara_window.destroy()
+
+        inara_window.protocol("WM_DELETE_WINDOW", on_close)
 
         frame = ttk.Frame(inara_window)
         frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -373,7 +388,7 @@ class WaypointEditorTab:
 
         def on_add():
             self.add_inara_route(inara_text.get("1.0", "end-1c"))
-            inara_window.destroy()
+            on_close()
 
         ttk.Button(frame, text=self.t('WPT_BTN_ADD_TO_WAYPOINTS', 'Add to Waypoints'), command=on_add).pack(pady=5)
 
@@ -1260,33 +1275,48 @@ class WaypointEditorTab:
         from_buy = True
         from_sell = True
 
+        # Inara's UI language changes these labels (e.g. Russian: "От"/"К"/"Купить"/"Продажа").
+        # "Buy price"/"Sell price" don't share a prefix with "Buy"/"Sell" in Russian
+        # ("Цена покупки"/"Цена продажи" vs "Купить"/"Продажа"), so no exclusion needed there.
+        # Trailing spaces avoid "К " (To) falsely matching the start of "Купить" (Buy).
+        from_prefixes = ("From ", "От ")
+        to_prefixes = ("To ", "К ")
+        buy_prefixes = ("Buy", "Купить")
+        buy_price_prefixes = ("Buy price", "Цена покупки")
+        sell_prefixes = ("Sell", "Продажа")
+        sell_price_prefixes = ("Sell price", "Цена продажи")
+
         for line in lines:
-            if line.startswith("From"):
-                parts = line.replace("From", "").split('|')
+            if line.startswith(from_prefixes):
+                prefix = next(p for p in from_prefixes if line.startswith(p))
+                parts = line[len(prefix):].split('|')
                 if len(parts) >= 2:
                     station = remove_non_ascii(parts[0]).strip()
                     system = remove_non_ascii(parts[1]).strip()
                     from_waypoint.station_name.set(station)
                     from_waypoint.system_name.set(system)
 
-            elif line.startswith("To"):
-                parts = line.replace("To", "").split('|')
+            elif line.startswith(to_prefixes):
+                prefix = next(p for p in to_prefixes if line.startswith(p))
+                parts = line[len(prefix):].split('|')
                 if len(parts) >= 2:
                     station = remove_non_ascii(parts[0]).strip()
                     system = remove_non_ascii(parts[1]).strip()
                     to_waypoint.station_name.set(station)
                     to_waypoint.system_name.set(system)
 
-            elif line.startswith("Buy") and not line.startswith("Buy price"):
-                commodity = line.replace("Buy", "").strip()
+            elif line.startswith(buy_prefixes) and not line.startswith(buy_price_prefixes):
+                prefix = next(p for p in buy_prefixes if line.startswith(p))
+                commodity = line[len(prefix):].strip()
                 if from_buy:
                     from_waypoint.buy_commodities.append(ShoppingItem(commodity, 9999))
                 else:
                     to_waypoint.buy_commodities.append(ShoppingItem(commodity, 9999))
                 from_buy = False
 
-            elif line.startswith("Sell") and not line.startswith("Sell price"):
-                commodity = line.replace("Sell", "").strip()
+            elif line.startswith(sell_prefixes) and not line.startswith(sell_price_prefixes):
+                prefix = next(p for p in sell_prefixes if line.startswith(p))
+                commodity = line[len(prefix):].strip()
                 if from_sell:
                     from_waypoint.sell_commodities.append(ShoppingItem(commodity, 9999))
                 else:
