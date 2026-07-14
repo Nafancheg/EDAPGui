@@ -128,28 +128,34 @@ def _find_ed_window():
 
 
 def _capture_screen(hwnd):
+    import ctypes
     import win32gui, win32ui
+
     left, top, right, bottom = win32gui.GetClientRect(hwnd)
     w, h = right - left, bottom - top
     if w <= 0 or h <= 0:
         return None
+
     hdc = win32gui.GetWindowDC(hwnd)
     mfc = win32ui.CreateDCFromHandle(hdc)
     save = mfc.CreateCompatibleDC()
     bmp = win32ui.CreateBitmap()
     bmp.CreateCompatibleBitmap(mfc, w, h)
     save.SelectObject(bmp)
-    win32gui.PrintWindow(hwnd, save.GetSafeHdc(), 2)
+
+    # PrintWindow via ctypes (removed from win32gui in newer pywin32)
+    PW_CLIENTONLY = 2
+    ctypes.windll.user32.PrintWindow(hwnd, save.GetSafeHdc(), PW_CLIENTONLY)
+
     info = bmp.GetInfo()
     bits = bmp.GetBitmapBits(True)
     img = np.frombuffer(bits, dtype=np.uint8).reshape((info['bmHeight'], info['bmWidth'], 4))
     img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-    for obj in (bmp.GetHandle(), save, mfc, hdc):
-        try:
-            if hasattr(obj, 'GetHandle'): win32gui.DeleteObject(obj.GetHandle())
-            elif hasattr(obj, 'DeleteDC'): obj.DeleteDC()
-        except Exception:
-            pass
+
+    # Cleanup GDI objects
+    win32gui.DeleteObject(bmp.GetHandle())
+    save.DeleteDC()
+    mfc.DeleteDC()
     win32gui.ReleaseDC(hwnd, hdc)
     return img
 

@@ -29,6 +29,13 @@ SPLIT = 0.2  # 20% validation
 for d in (TRAIN_IMG, TRAIN_LBL, VAL_IMG, VAL_LBL):
     os.makedirs(d, exist_ok=True)
 
+# Write classes.txt for LabelImg compatibility
+for cls_dir in (os.path.join(DST, "train"), os.path.join(DST, "val")):
+    cls_path = os.path.join(cls_dir, "classes.txt")
+    if not os.path.exists(cls_path):
+        with open(cls_path, 'w') as f:
+            f.write("core\njetcone\n")
+
 
 def label_frame(img_path: str, out_dir: str) -> int:
     """Generate YOLO .txt label for one frame. Returns number of labels written."""
@@ -116,11 +123,17 @@ def main():
 
         print(f"  {subset}: {len(file_list)} images → {img_dir}")
 
+    # Copy labels + classes.txt next to images for LabelImg viewing
+    for img_dir, lbl_dir in ((TRAIN_IMG, TRAIN_LBL), (VAL_IMG, VAL_LBL)):
+        for f in os.listdir(lbl_dir):
+            if f.endswith('.txt') and f != 'classes.txt':
+                shutil.copy2(os.path.join(lbl_dir, f), os.path.join(img_dir, f))
     print(f"Total labels: {total_labels}")
     if skipped:
         print(f"Skipped {skipped} frames (no objects detected) — review manually")
     print(f"\nDataset ready at: {DST}")
     print("Next:  yolo train data=Yolo26/jetcone-model/data.yaml model=yolo26n.pt epochs=100")
+    print("To review labels:  labelImg dataset/train/images dataset/train/images/classes.txt")
 
 
 if __name__ == "__main__":
