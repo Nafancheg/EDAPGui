@@ -162,3 +162,54 @@ ED_AP.py 4574→1527 строк; вся лётная логика в `services/`
 - Решение заказчика «хочу видеть в MCDU» отменило отложенность фронта. `mcdu.js`: PLOT FUEL-SAFE/FAST → `sec.plot` (busy-guard, `PLOTTING…`), SEC DEST [E] с дефолтом из активного плана, COMPARE R2–R5 живые, ACTIVATE SEC шлёт `sec.activate` (ответ NOT AVAILABLE ожидаем до игры), NEAREST/DIRECT TO → `dir.nearest`/`dir.set`, карточка кандидата R2/R3; новая страница **SEC LIST** (ур.2, формат F-PLN: окно 5 строк, slew, END OF PLAN, маркеры SCOOP/NTR/·RFL). `demo_mcdu_server.py`: FakeJournal c Loadout-фикстурой (Krait MkII 5A инж.) — реальный RoutePlanner работает на fake-ядре.
 - **Инлайн-фиксы по живой проверке в браузере** (реальные Spansh/EDSM через демо-сервер): (1) scratchpad-фильтр не пропускал `'`/`*` — а это легальные символы имён систем ED (Barnard's Star, Sagittarius A*); (2) успешный `dir.set` не потреблял scratchpad — добавлен `S.dirPending`, подтверждающий `dir_state` съедает ввод, `INVALID` оставляет для правки.
 - Живая проверка: FUEL-SAFE Devataru→Maia = 16 прыжков/502 LY/9 заправок/LOW на странице SEC; SEC LIST с реальными системами (LP 861-12, Wolf 359…); DIR NEAREST SCOOPABLE = LTT 6566 K·5.8 LY; `SAGITTARIUS A*` валидирован («Supermassive Black Hole · 25809 LY»); состояние восстанавливается после перезагрузки страницы (`sec.get`). Замечание 18 в спеке. QA: `qa_route_ws` 8/8, `node --check`, импорт демо-сервера.
+
+---
+
+## Jet Cone FSD Supercharge — полный пайплайн ✅ (2026-07-14, `0a1e265`)
+
+Автоматический заход в джет-конус нейтронной звезды для суперзарядки FSD (×4 дальность). Полный цикл: обнаружение → выравнивание → заход → выход.
+
+### Датасет и модель
+- **Датасет:** `tools/jetcone_dataset.py` — загрузка YouTube-видео заходов в конус (yt-dlp) + покадровая нарезка (ffmpeg).
+- **Прелейблинг:** `tools/prelabel_jetcone.py` — HSV-автомат детектирует ярко-синие/фиолетовые конусы на тёмном фоне, сохраняет YOLO-аннотации.
+- **Модель:** `Yolo26/jetcone-model/` — YOLOv8n, обучена на 94 авторазмеченных кадрах, **mAP50 = 0.715**.
+
+### JetConeService (`services/jetcone_service.py`, 523 строки)
+- **Полный алгоритм входа с YOLO:**
+  1. Прибытие к нейтронной звезде → STOP (throttle 0)
+  2. Screen capture → YOLO детектирует позиции и углы конусов
+  3. Roll до горизонтального положения звезды (конусы слева/справа: `>o<`)
+  4. Roll +90° вправо → правый конус указывает ВВЕРХ
+  5. Pitch/Yaw → выравнивание параллельно конусу, лёгкий угол к дальнему концу
+  6. Throttle 50% → плавный вход → OCR: "WARNING! FSD OPERATING BEYOND SAFETY LIMITS"
+  7. Ожидание в турбулентности → OCR: "FRAME SHIFT DRIVE SUPERCHARGED"
+  8. Throttle 100% → выход из конуса (угол зависит от геометрии, турбулентный)
+  9. Курс прочь от звезды
+- **Fallback (без YOLO):** слепой pitch в сторону одного из полюсов, OCR-управляемый вход.
+- **Self-training:** каждый успешный OCR-вход сохраняет прелейблированный кадр для дообучения.
+- **Различение типов:** нейтронные звёзды (класс N, ×4 дальность) — полный заход; белые карлики (класс D, ×1.5) — пропускаются (слишком рискованно для малого выигрыша).
+
+### JetConeDetection — датакласс геометрии (`ED_AP.py`)
+- Поля: `core`, `left_jet`, `right_jet` (bounding boxes), `axis_angle` (угол оси звезды).
+- Используется YOLO-предиктом и контрольным циклом входа.
+
+### MachineLearning (`MachineLearning.py`, +40 строк)
+- Новый тип модели `JetCone`, метод `model_predict_all()` — возвращает список `JetConeDetection`.
+- Модель загружается лениво при первом вызове детекции конуса.
+
+### OCR-детекторы (панели WARNING + INFO)
+- `jet_cone_entry_ocr` — ловит "FSD OPERATING BEYOND SAFETY LIMITS" на WARNING-панели.
+- `jet_cone_supercharged_ocr` — ловит "FRAME SHIFT DRIVE SUPERCHARGED" на INFO-панели.
+
+### EDJournal (`EDJournal.py`, +17 строк)
+- Новое событие: `Supercharged` — флаг `fsd_supercharged`, множитель `supercharge_multiplier`.
+- Читается из игрового журнала, сбрасывается при прыжке.
+
+### Локализация
+- Новые ключи `FSD_SUPERCHARGED_MSG` + `FSD_SAFETY_LIMIT_MSG` во всех 5 локалях (en/ru/de/es/fr).
+
+### Интеграция в jump_service
+- `jump_service.py` (+10 строк): после прыжка в систему с нейтронной звездой вызывается `JetConeService.run()`.
+
+### Статистика коммита
+- 17 файлов, +1203/−4 строк. Ядро: `services/jetcone_service.py` (523), `ED_AP.py` (+226), `tools/` (351), ML (+40).
