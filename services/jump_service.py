@@ -253,7 +253,15 @@ class JumpService:
                 if off:
                     self.ap.ship_control.roll_clockwise_anticlockwise(off['roll'], auto_tune=self.ap.auto_tune_rpy, cur_deg=off['roll'])
 
-                # Refuel
+                # Refuel — or jet cone boost if we arrived at a neutron star
+                refueled = False
+                if self.ap.jetcone_service.is_neutron_star(boost_only=True):
+                    boosted = self.ap.jetcone_service.boost(scr_reg)
+                    if boosted:
+                        # After boost, skip refuel and position — go straight to next jump
+                        self.ap.update_ap_status("Maneuvering")
+                        continue
+                    # Boost failed — fall through to normal refuel
                 refueled = self.ap.fuel_service.refuel_new(scr_reg)
 
                 self.ap.update_ap_status("Maneuvering")

@@ -28,6 +28,7 @@ class MachLearnMatch:
 class ModelType(enum.Enum):
     Compass = 0
     Target = 1
+    JetCone = 2
 
 
 class MachLearn:
@@ -37,6 +38,11 @@ class MachLearn:
 
         self.compass_ml_model = YOLO("Yolo26/compass-model/weights/best.pt")
         self.target_ml_model = YOLO("Yolo26/target-model/weights/best.pt")
+        self.jetcone_ml_model = None
+        try:
+            self.jetcone_ml_model = YOLO("Yolo26/jetcone-model/weights/best.pt")
+        except Exception:
+            pass  # model not trained yet — will fall back to OCR-only detection
 
     def model_predict(self, model: ModelType, image, class_name: str) -> list[MachLearnMatch] | None:
         """ Performs a prediction of an image using the relevant model and returns the results.
@@ -51,9 +57,13 @@ class MachLearn:
         matches: list[MachLearnMatch] = []
         # Do prediction with ML
         if model is ModelType.Compass:
-            results = self.compass_ml_model.predict(image, verbose=False)  # Predict on an image
-        elif model is model.Target:
-            results = self.target_ml_model.predict(image, verbose=False)  # Predict on an image
+            results = self.compass_ml_model.predict(image, verbose=False)
+        elif model is ModelType.Target:
+            results = self.target_ml_model.predict(image, verbose=False)
+        elif model is ModelType.JetCone:
+            if self.jetcone_ml_model is None:
+                return None
+            results = self.jetcone_ml_model.predict(image, verbose=False)
 
         if results and len(results) == 1:
             r = results[0]
@@ -77,4 +87,28 @@ class MachLearn:
                 return matches
             else:
                 return None
+
+    def model_predict_all(self, model: ModelType, image) -> list[MachLearnMatch] | None:
+        """Return ALL detections for all classes (no per-class dedup).
+        Needed for JetCone where we need core + left_jet + right_jet simultaneously."""
+        if model is ModelType.JetCone:
+            if self.jetcone_ml_model is None:
+                return None
+            results = self.jetcone_ml_model.predict(image, verbose=False)
+        else:
+            return self.model_predict(model, image, '')
+
+        if results and len(results) == 1:
+            r = results[0]
+            if len(r.boxes) > 0:
+                matches: list[MachLearnMatch] = []
+                for b in r.boxes:
+                    clsid = int(b.cls.item())
+                    name = r.names[clsid]
+                    confidence = b.conf.item()
+                    rect_tmp = b.xyxy.tolist()[0]
+                    res_quad = Quad.from_rect(rect_tmp)
+                    matches.append(MachLearnMatch(class_name=name, match_pct=confidence, bounding_quad=res_quad))
+                return matches
+        return None
 

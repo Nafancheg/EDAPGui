@@ -1,5 +1,7 @@
 {
     "PRESS_TO_DISENGAGE_MSG": "?",
+    "FSD_SUPERCHARGED_MSG": "?",
+    "FSD_SAFETY_LIMIT_MSG": "?",
 
     "OVL_AP_MODE": "MODE AP",
     "OVL_AP_STATUS": "STATUT AP",

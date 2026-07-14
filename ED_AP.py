@@ -11,6 +11,7 @@ import random
 from string import Formatter
 from tkinter import messagebox
 from typing import TypedDict
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -25,6 +26,7 @@ from EDGraphicsSettings import EDGraphicsSettings
 from EDShipControl import EDShipControl, CompassTargetOffset
 from EDlogger import logging
 from services.docking_service import DockingService
+from services.jetcone_service import JetConeService
 from services.elw_advisor import ElwAdvisor
 from services.fuel_service import FuelService
 from services.jump_service import JumpService
@@ -63,6 +65,29 @@ class ScTargetAlignReturn(Enum):
     Found = 2
     Disengage = 3
     Overheat = 4
+
+
+@dataclass
+class JetConeDetection:
+    """Full geometry of a neutron star jet cone system from YOLO detection.
+
+    Attributes:
+        core: star core bounding box (screen coords)
+        left_jet: left jet cone bounding box
+        right_jet: right jet cone bounding box
+        jet_axis_angle: angle of the LeftJet→RightJet axis relative to the
+            HORIZONTAL AXIS of the image (screen coordinates), in degrees.
+            0° = horizontal, +90° = right jet points UP.
+            MUST be recomputed after every new frame — roll changes it.
+        target_entry: (x_pct, y_pct) approach point on screen (0..1)
+        confidence: minimum confidence across all three detections
+    """
+    core: Quad | None = None
+    left_jet: Quad | None = None
+    right_jet: Quad | None = None
+    jet_axis_angle: float = 0.0
+    target_entry: tuple[float, float] = (0.5, 0.5)
+    confidence: float = 0.0
 
 
 class FSDAssistReturn(Enum):
@@ -110,6 +135,7 @@ class EDAutopilot:
         self._ocr = None
         self._mach_learn = None
         self._sc_disengage_active = False  # Is SC Disengage active
+        self._jet_cone_supercharged = False  # FSD supercharged by neutron star / white dwarf
         self.ship_tst_roll_enabled = False
         self.ship_tst_pitch_enabled = False
         self.ship_tst_yaw_enabled = False
@@ -190,6 +216,7 @@ class EDAutopilot:
         self.nav_service = NavigationService(self)
         self.jump_service = JumpService(self)
         self.docking_service = DockingService(self)
+        self.jetcone_service = JetConeService(self)
         self.elw_advisor = ElwAdvisor(self)
         self.nav_panel = EDNavigationPanel(self, self.scr, self.keys, cb)
 
@@ -695,6 +722,8 @@ class EDAutopilot:
             "eta": self._str_eta,
             "elw_scanner": self.fss_detected if self.config["ElwScannerEnable"] else None,
             "edsm_info": self.edsm_info or None,
+            "fsd_supercharged": ship.get('fsd_supercharged', False),
+            "supercharge_multiplier": ship.get('supercharge_multiplier', 1.0),
         }
 
     def update_overlay(self):
@@ -1004,6 +1033,203 @@ class EDAutopilot:
             return True
 
         return False
+
+    def jet_cone_supercharged_ocr(self, scr_reg) -> bool:
+        """ OCR-detect 'FSD SUPERCHARGED' in the info panel (top-right of HUD).
+        Same pattern as sc_disengage_ocr — captures a screen region, runs PaddleOCR,
+        compares against locale string. Returns True if FSD is supercharged. """
+        # Must be in cockpit view
+        if self.status.get_gui_focus() != GuiFocusNoFocus:
+            return False
+
+        image = self.scr.get_screen_region(scr_reg.reg['disengage']['rect'])
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mask = scr_reg.capture_region_filtered(self.scr, 'disengage')
+        masked_image = cv2.bitwise_and(image, image, mask=mask)
+        image = masked_image
+
+        sim_match = 0.35
+        sim = 0.0
+        ocr_textlist = self.ocr.image_simple_ocr(image, 'jetcone_supercharged')
+        if ocr_textlist is not None:
+            target = self.locale["FSD_SUPERCHARGED_MSG"]
+            sim = self.ocr.string_similarity(target, str(ocr_textlist))
+            logger.debug(f"JetCone supercharged similarity with {str(ocr_textlist)} is {sim}")
+
+        if self.debug_overlay:
+            abs_rect = scr_reg.reg['disengage']['rect']
+            self.overlay.overlay_rect1('jetcone_ocr', abs_rect, (0, 200, 255), 2)
+            self.overlay.overlay_floating_text('jetcone_ocr',
+                f'Supercharged: {str(ocr_textlist)} ({sim:.3f})', abs_rect[0], abs_rect[1] - 25, (0, 200, 255))
+            self.overlay.overlay_paint()
+
+        if self.cv_view:
+            image = cv2.rectangle(image, (0, 0), (1000, 30), (0, 0, 0), -1)
+            cv2.putText(image, f'Text: {str(ocr_textlist)}', (1, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(image, f'Sim: {sim:5.4f} > {sim_match}', (1, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.imshow('jetcone_supercharged', image)
+            cv2.moveWindow('jetcone_supercharged', self.cv_view_x - 460, self.cv_view_y + 700)
+            cv2.waitKey(30)
+
+        return sim > sim_match
+
+    def jet_cone_entry_ocr(self, scr_reg) -> bool:
+        """ OCR-detect the warning message that appears at screen CENTER when entering
+        a jet cone: 'WARNING! FSD OPERATING BEYOND SAFETY LIMITS' (or locale equivalent).
+        When detected, also saves the current frame for YOLO self-training.
+
+        Uses the 'info_panel' region — the center-screen message area where warnings
+        like 'IMPACT', 'SLOW DOWN', and jet cone entry appear. """
+        if self.status.get_gui_focus() != GuiFocusNoFocus:
+            return False
+
+        # Use info_panel if calibrated, otherwise fall back to a wide center strip
+        if 'info_panel' in scr_reg.reg:
+            image = self.scr.get_screen_region(scr_reg.reg['info_panel']['rect'])
+        else:
+            # Fallback: capture upper-center 50%×20% of screen
+            full = scr_reg.capture_region_percent(self.scr, 'full_panel')
+            h, w = full.shape[:2]
+            image = full[int(h * 0.05):int(h * 0.25), int(w * 0.25):int(w * 0.75)]
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        sim_match = 0.30
+        sim = 0.0
+        ocr_textlist = self.ocr.image_simple_ocr(image, 'jetcone_entry')
+        if ocr_textlist is not None:
+            target = self.locale["FSD_SAFETY_LIMIT_MSG"]
+            sim = self.ocr.string_similarity(target, str(ocr_textlist))
+            logger.debug(f"JetCone entry similarity with {str(ocr_textlist)} is {sim}")
+
+        detected = sim > sim_match
+        if detected and not self._jet_cone_supercharged:
+            # We just entered a jet cone — save this frame for self-training
+            self._save_jetcone_training_frame()
+
+        if self.debug_overlay and 'info_panel' in scr_reg.reg:
+            abs_rect = scr_reg.reg['info_panel']['rect']
+            color = (0, 255, 0) if detected else (0, 200, 255)
+            self.overlay.overlay_rect1('jetcone_entry', abs_rect, color, 2)
+            self.overlay.overlay_floating_text('jetcone_entry',
+                f'Entry: {str(ocr_textlist)} ({sim:.3f})', abs_rect[0], abs_rect[1] - 25, color)
+            self.overlay.overlay_paint()
+
+        return detected
+
+    def _save_jetcone_training_frame(self):
+        """ Save the current full-screen frame + HSV-based pre-label for YOLO self-training.
+        Only saves one frame per cone entry to avoid duplicates. """
+        from datetime import datetime
+        import os as _os
+        auto_dir = _os.path.join("Yolo26", "jetcone-model", "auto_labels")
+        _os.makedirs(auto_dir, exist_ok=True)
+
+        # Capture full screen
+        full = self.scrReg.capture_region_percent(self.scr, 'full_panel')
+        if full is None:
+            return
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        img_name = f"auto_{ts}.jpg"
+        img_path = _os.path.join(auto_dir, img_name)
+
+        # HSV mask for jet cone (bright blue-white plasma)
+        hsv = cv2.cvtColor(full, cv2.COLOR_BGR2HSV)
+        # Blue-cyan range (jet cone is characteristically blue-white)
+        lower = np.array([90, 20, 180])
+        upper = np.array([140, 255, 255])
+        mask = cv2.inRange(hsv, lower, upper)
+
+        # Find largest contour → bounding box
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest)
+            # Only save if the box is plausible (not tiny, not full-screen)
+            ih, iw = full.shape[:2]
+            if w > 40 and h > 40 and w < iw * 0.9:
+                cv2.imwrite(img_path, full, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+                # YOLO label: class_id cx cy w h (normalised 0..1)
+                cx = (x + w / 2) / iw
+                cy = (y + h / 2) / ih
+                nw = w / iw
+                nh = h / ih
+                label_path = img_path.replace('.jpg', '.txt')
+                with open(label_path, 'w') as f:
+                    f.write(f"0 {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}\n")
+
+                self.ap_ckb('log', f'Jet cone training frame saved: {img_name}')
+                logger.debug(f"Auto-label saved: {img_name} box=({x},{y},{w},{h})")
+
+    def jet_cone_ml_detect(self, scr_reg) -> JetConeDetection | None:
+        """ ML-based jet cone detection returning full geometry.
+
+        Uses model_predict_all to get core + left jet + right jet simultaneously.
+        Returns JetConeDetection with geometry or None if model not trained /
+        detection failed.
+
+        @return: JetConeDetection | None
+        """
+        from MachineLearning import ModelType
+        from ED_AP import JetConeDetection  # local import avoids circular
+
+        image = scr_reg.capture_region_percent(self.scr, 'full_panel')
+        if image is None:
+            return None
+
+        image2 = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+        ml_res = self.mach_learn.model_predict_all(ModelType.JetCone, image2)
+        if not ml_res:
+            return None
+
+        # Collect per-class matches
+        detections: dict[str, MachLearnMatch] = {}
+        for m in ml_res:
+            if m.class_name not in detections or m.match_pct > detections[m.class_name].match_pct:
+                detections[m.class_name] = m
+
+        core_match = detections.get('core')
+        jet_matches = [m for m in ml_res if m.class_name in ('jetcone', 'jetcone-dwarf')]
+
+        if not core_match or len(jet_matches) < 2:
+            logger.debug(f"JetCone ML: incomplete — core={core_match is not None}, jets={len(jet_matches)}")
+            return None
+
+        # Sort jets left→right by x-center of their bounding boxes
+        jet_matches.sort(key=lambda m: (m.bounding_quad.left + m.bounding_quad.right) / 2)
+
+        left_jet = jet_matches[0]
+        right_jet = jet_matches[1]
+
+        # Compute jet axis angle: from left_jet center → right_jet center
+        lcx = (left_jet.bounding_quad.left + left_jet.bounding_quad.right) / 2
+        lcy = (left_jet.bounding_quad.top + left_jet.bounding_quad.bottom) / 2
+        rcx = (right_jet.bounding_quad.left + right_jet.bounding_quad.right) / 2
+        rcy = (right_jet.bounding_quad.top + right_jet.bounding_quad.bottom) / 2
+        dx = rcx - lcx
+        dy = rcy - lcy
+        jet_axis_angle = math.degrees(math.atan2(dy, dx))
+
+        # target_entry: approach the right jet's center
+        h, w = image2.shape[:2]
+        target_entry = (
+            rcx / w,   # x_pct 0..1
+            rcy / h,   # y_pct 0..1
+        )
+
+        conf = min(core_match.match_pct, left_jet.match_pct, right_jet.match_pct)
+
+        result = JetConeDetection(
+            core=core_match.bounding_quad,
+            left_jet=left_jet.bounding_quad,
+            right_jet=right_jet.bounding_quad,
+            jet_axis_angle=round(jet_axis_angle, 2),
+            target_entry=target_entry,
+            confidence=round(conf, 3),
+        )
+        logger.debug(f"JetCone ML: axis={jet_axis_angle:.1f}°, conf={conf:.3f}")
+        return result
 
     def start_sco_monitoring(self):
         """ Start Supercruise Overcharge Monitoring. This starts a parallel thread used to detect SCO

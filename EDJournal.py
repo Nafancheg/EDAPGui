@@ -257,6 +257,8 @@ class EDJournal:
             'has_std_dock_comp': None,
             'has_sco_fsd': None,
             'has_supercruise_assist': None,
+            'fsd_supercharged': False,        # FSD supercharged by jet cone
+            'supercharge_multiplier': 1.0,    # ×1 normal, ×4 neutron, ×1.5 white dwarf
             'StationServices': None,
             'ConstructionDepotDetails': dict[str, any],
             'MarketID': 0,
@@ -348,6 +350,13 @@ class EDJournal:
                 self.ship['SupercruiseDestinationDrop_type'] = None
                 if log['JumpType'] == 'Hyperspace':
                     self.ship['star_class'] = log['StarClass']
+                # Reset supercharge flag — it is consumed on the next hyperspace jump
+                self.ship['fsd_supercharged'] = False
+
+            elif log_event == 'Supercharged':
+                # FSD supercharged by neutron star or white dwarf jet cone
+                self.ship['fsd_supercharged'] = True
+                self.ship['supercharge_multiplier'] = 4.0  # standard neutron ×4
 
             elif log_event == 'SupercruiseEntry' or log_event == 'FSDJump':
                 self.ship['status'] = 'in_supercruise'
@@ -684,6 +693,14 @@ class EDJournal:
             self.open_journal(latest_log)
 
         # Check if file changed
+
+    def is_supercharged(self) -> bool:
+        """Returns True if FSD is currently supercharged (neutron star / white dwarf)."""
+        return self.ship.get('fsd_supercharged', False)
+
+    def get_supercharge_mult(self) -> float:
+        """Returns the current FSD supercharge multiplier (1.0 = normal, 4.0 = neutron)."""
+        return self.ship.get('supercharge_multiplier', 1.0)
         if self.get_file_modified_time() == self.last_mod_time:
             return self.ship
 

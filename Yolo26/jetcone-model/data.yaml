@@ -1,0 +1,9 @@
+# YOLO training config — jet cone detection
+# Two classes: 'jetcone' (neutron star jet cone) and 'jetcone-dwarf' (white dwarf cone)
+
+path: dataset
+train: train/images
+val: val/images
+
+nc: 2
+names: ['core', 'jetcone']

@@ -24,6 +24,13 @@ test/match/
 debug-output/
 runs/
 
+# YOLO training artefacts
+Yolo26/*/captures/
+Yolo26/*/auto_labels/
+Yolo26/*/dataset/
+Yolo26/*/test_*.jpg
+Yolo26/*/train*/
+
 # Virtual environments
 .venv/
 venv/

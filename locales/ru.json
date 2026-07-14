@@ -1,5 +1,7 @@
 {
     "PRESS_TO_DISENGAGE_MSG": "Нажмите чтобы остановить",
+    "FSD_SUPERCHARGED_MSG": "Рамочно-смесительный двигатель перегружен",
+    "FSD_SAFETY_LIMIT_MSG": "FSD работает в небезопасном режиме",
 
     "OVL_AP_MODE": "РЕЖИМ АП",
     "OVL_AP_STATUS": "СТАТУС АП",
