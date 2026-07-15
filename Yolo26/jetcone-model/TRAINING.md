@@ -4,7 +4,7 @@
 
 Модель `jetcone-model` — YOLOv26 nano, 2 класса:
 - `0: core` — яркое ядро нейтронной звезды / белого карлика
-- `1: jetcone` — плазменный конус (джет)
+- `1: jet` — плазменный конус (джет)
 
 Используется сервисом `services/jetcone_service.py` для автоматического входа в конус и зарядки FSD.
 
@@ -26,12 +26,16 @@ Yolo26/jetcone-model/
 ```
 
 Инструменты:
-- `tools/jetcone_dataset.py` — сбор сырых кадров (3 режима)
-- `tools/prelabel_jetcone.py` — авторазметка кадров из `captures/` → `dataset/`
+- `tools/jetcone_dataset.py` — сбор сырых кадров (3 режима: интерактив, локальное видео, YouTube)
+- `tools/prelabel_jetcone.py` — HSV-авторазметка кадров из `captures/` → `dataset/`
+- `tools/auto_label_jetcone.py` — **доразметка обученной моделью** (best.pt) всех train-изображений
+- `tools/predict_all.py` — переразметка всех кадров моделью (замена HSV-лейблов)
+- `tools/auto_label2.py` — разметка моделью только непромаркированных кадров в `unlabeled/`
+- `tools/yolo_bbox_editor/` — **GUI-редактор боксов** (свой, не нужно ставить LabelImg)
 
 ---
 
-## Полный цикл дообучения (7 шагов)
+## Полный цикл дообучения (6 шагов)
 
 ### Шаг 1. Собрать сырые кадры в `captures/`
 
@@ -79,7 +83,7 @@ python tools/prelabel_jetcone.py
    - Фильтр: площадь бокса от 0.2% до 40% кадра (иначе не core)
    - Записывает: `0 cx cy w h` (нормализованные, 6 знаков)
 
-   **Детекция jetcone (класс 1):**
+   **Детекция jet (класс 1):**
    - HSV-фильтр: `H: 90–140, S: 20–255, V: 180–255` (сине-белый конус)
    - Морфология: CLOSE 7×7 (заполняет дыры в маске)
    - Находит контуры, берёт до 2 крупнейших
@@ -99,57 +103,72 @@ Dataset ready at: ...\Yolo26\jetcone-model\dataset
 
 ---
 
-### Шаг 3. Проверить и поправить разметку
+### Шаг 2.5. Доразметить обученной моделью
 
-**Это самый важный шаг.** Авторазметка ошибается, если:
-- Звезда очень далеко → core не детектится (слишком маленький)
-- Звезда очень близко → core занимает >40% кадра (отфильтрован)
-- Конус тусклый/короткий → не проходит HSV-порог
-- Яркий HUD-элемент → может быть принят за core или jetcone
-- Звезда не на чёрном фоне (туманность) → HSV-маска захватывает лишнее
+HSV-прелейблинг ловит яркие конусы, но пропускает тусклые/дальние. Обученная модель (`weights/best.pt`, mAP50 ≈ 0.72) находит то, что HSV пропустил:
 
-**Что делать:**
+```powershell
+python tools/auto_label_jetcone.py
+```
 
-Откройте папки `dataset/train/images/` и `dataset/val/images/` в любом YOLO-совместимом разметчике:
-- **[LabelImg](https://github.com/HumanSignal/labelImg)** — простой, локальный, формат YOLO
-- **[Label Studio](https://labelstud.io/)** — веб-интерфейс, можно локально
-- **[CVAT](https://www.cvat.ai/)** — мощный, для больших датасетов
+**Что делает:** прогоняет `best.pt` по ВСЕМ train-изображениям и перезаписывает лейблы там, где модель уверена (conf ≥ 0.5). HSV-лейблы на кадрах, где модель ничего не нашла, остаются без изменений.
+
+**Альтернативные скрипты:**
+
+| Скрипт | Когда использовать |
+|--------|-------------------|
+| `auto_label_jetcone.py` | После prelabel — доразметить моделью все train-кадры |
+| `predict_all.py` | Полностью заменить ВСЕ лейблы на модельные (сбросить HSV) |
+| `auto_label2.py` | Разметить только кадры без лейблов (положить в `dataset/train/unlabeled/`) |
+
+**Типичный результат после HSV + модели:**
+```
+TRAIN: 286 img | 239 lbl | 47 без лейблов   ← кадры без джета (дальний полёт)
+VAL:    89 img |  64 lbl | 25 без лейблов
+```
+Кадры без лейблов — кандидаты на удаление из датасета (нет объекта для детекции).
+
+---
+
+### Шаг 3. Проверить и поправить разметку (yolo_bbox_editor)
+
+**Это самый важный шаг.** И HSV, и модель ошибаются. Используйте встроенный редактор:
+
+```powershell
+# Из корня EDAPGui:
+tools\yolo_bbox_editor\run_bbox_editor.bat
+```
+
+**Интерфейс редактора:**
+
+| Действие | Как |
+|----------|-----|
+| Открыть датасет | «Open Folder» → выбрать `dataset/train/` (авточитает `data.yaml` для имён классов) |
+| Навигация | `A` / `D` или кнопки «◀ Prev» / «Next ▶» |
+| Новый бокс | ЛКМ по пустому месту — растянуть прямоугольник |
+| Переместить бокс | Зажать и тащить (внутри бокса, не за край) |
+| Resize бокса | Тянуть за край/угол (8 направлений) |
+| Сменить класс | Выделить бокс → цифра `0` (core) или `1` (jet) |
+| Удалить бокс | Выделить → `Delete` |
+| Удалить все | Кнопка «Del All» |
+| Зум | `Ctrl+Колесо` или кнопки «Zoom ±» / «100%» / «Fit» |
+| Пан | `Пробел+ЛКМ` или средняя кнопка мыши |
+| Сохранить | `Ctrl+S` или кнопка «Save» (автосохраняется при переходе к след. кадру) |
 
 **Что проверять на КАЖДОМ кадре:**
 
 | Проверка | Действие |
 |----------|----------|
 | Core (класс 0) — бокс точно вокруг яркого центра? | Поправить/перерисовать |
-| Jetcone (класс 1) — бокс охватывает ВЕСЬ видимый конус? | Поправить/перерисовать |
+| Jet (класс 1) — бокс охватывает ВЕСЬ видимый конус? | Поправить/перерисовать |
 | Два конуса видны — оба размечены как класс 1? | Добавить второй бокс |
-| На кадре вообще нет конуса? | Удалить `.jpg` и `.txt` |
+| На кадре вообще нет конуса? | Удалить `.jpg` и `.txt` из папки |
 | Бокс захватил HUD или другие объекты? | Поправить |
-| Core и jetcone пересекаются? | Разнести — они должны быть отдельными боксами |
-
-Особенно внимательно проверьте кадры, которые скрипт пометил как `Skipped` — их всё равно нужно либо разметить вручную, либо удалить.
+| Core и jet пересекаются? | Разнести — они должны быть отдельными боксами |
 
 ---
 
-### Шаг 4. Добавить auto_labels в датасет (если не сделали в шаге 1)
-
-Если вы скопировали `auto_labels/*` в `captures/` до запуска prelabel — они уже в датасете. Если нет:
-
-```powershell
-# Вариант А: скопировать в captures/ и перезапустить prelabel
-cp Yolo26/jetcone-model/auto_labels/*.jpg Yolo26/jetcone-model/captures/
-cp Yolo26/jetcone-model/auto_labels/*.txt Yolo26/jetcone-model/captures/
-python tools/prelabel_jetcone.py
-
-# Вариант Б: скопировать сразу в dataset/train/ (без перегенерации всего датасета)
-cp Yolo26/jetcone-model/auto_labels/*.jpg Yolo26/jetcone-model/dataset/train/images/
-cp Yolo26/jetcone-model/auto_labels/*.txt Yolo26/jetcone-model/dataset/train/labels/
-```
-
-**Внимание:** разметка из auto_labels тоже требует проверки — модель могла ошибиться. Особенно `.txt` от blind/OCR-входов (там только HSV-маска, без core).
-
----
-
-### Шаг 5. Проверить `data.yaml`
+### Шаг 4. Проверить `data.yaml`
 
 ```powershell
 type Yolo26\jetcone-model\data.yaml
@@ -157,16 +176,16 @@ type Yolo26\jetcone-model\data.yaml
 
 Должно быть:
 ```yaml
-path: dataset
+path: C:/Users/nafan/Documents/ED Autopilot/EDAPGui/Yolo26/jetcone-model/dataset
 train: train/images
 val: val/images
 nc: 2
-names: ['core', 'jetcone']
+names: ['core', 'jet']
 ```
 
 ---
 
-### Шаг 6. Запустить обучение
+### Шаг 5. Запустить обучение
 
 Все команды запускаются из `EDAPGui/`:
 
@@ -201,7 +220,7 @@ yolo train data=Yolo26/jetcone-model/data.yaml model=Yolo26/jetcone-model/weight
 
 ---
 
-### Шаг 7. Задеплоить и протестировать
+### Шаг 6. Задеплоить и протестировать
 
 ```powershell
 # Бэкап текущей модели
@@ -246,18 +265,25 @@ cp Yolo26/jetcone-model/runs/detect/train/weights/best.pt Yolo26/jetcone-model/w
 
 ```powershell
 # 1. Собрать кадры
-python tools/jetcone_dataset.py                    # интерактивно
-cp Yolo26/jetcone-model/auto_labels/* captures/    # добавить автосбор
+python tools/jetcone_dataset.py                              # интерактивно
+python tools/jetcone_dataset.py "clip.mp4"                   # или из видео
+cp Yolo26/jetcone-model/auto_labels/* captures/              # добавить автосбор
 
-# 2. Прелейблинг
+# 2. HSV-прелейблинг
 python tools/prelabel_jetcone.py
 
-# 3. ПРОВЕРИТЬ РАЗМЕТКУ ВРУЧНУЮ ← не пропускать!
+# 3. Доразметка моделью
+python tools/auto_label_jetcone.py
 
-# 4. Обучение
+# 4. ПРОВЕРИТЬ РАЗМЕТКУ ВРУЧНУЮ ← не пропускать!
+tools\yolo_bbox_editor\run_bbox_editor.bat
+#   Open Folder → выбрать dataset/train/
+#   A/D — навигация, ЛКМ — новый бокс, 0/1 — класс, Delete — удалить, Ctrl+S — сохранить
+
+# 5. Обучение
 yolo train data=Yolo26/jetcone-model/data.yaml model=Yolo26/jetcone-model/weights/best.pt epochs=50 patience=15 batch=16 imgsz=640 device=0
 
-# 5. Деплой
+# 6. Деплой
 cp Yolo26/jetcone-model/weights/best.pt Yolo26/jetcone-model/weights/best.backup.pt
 cp Yolo26/jetcone-model/runs/detect/train/weights/best.pt Yolo26/jetcone-model/weights/best.pt
 ```

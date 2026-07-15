@@ -1,22 +1,28 @@
 """Label ALL images with model predictions."""
-from ultralytics import YOLO
-from pathlib import Path
+import sys
+import os
 import shutil
+from pathlib import Path
 
-BASE = Path(r"C:\Users\nafan\Documents\ED_Autopilot\Yolo26\jetcone-model\dataset\train")
-model = YOLO(str(BASE.parent.parent / "weights" / "best.pt"))
+from ultralytics import YOLO
 
-img_dir = BASE / "images"
-lbl_dir = BASE / "labels"
+REPO = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = REPO / "Yolo26" / "jetcone-model"
+DATASET = MODEL_DIR / "dataset" / "train"
+
+model = YOLO(str(MODEL_DIR / "weights" / "best.pt"))
+
+img_dir = DATASET / "images"
+lbl_dir = DATASET / "labels"
 
 results = model.predict(
     str(img_dir), save=False, save_txt=True, save_conf=False,
     conf=0.5, iou=0.5,
-    project=str(BASE), name="predict_all", exist_ok=True,
+    project=str(DATASET), name="predict_all", exist_ok=True,
 )
 
 # Move labels
-auto = BASE / "predict_all" / "labels"
+auto = DATASET / "predict_all" / "labels"
 copied = 0
 if auto.exists():
     for f in auto.glob("*.txt"):
@@ -26,4 +32,5 @@ if auto.exists():
 # Clean
 shutil.rmtree(auto.parent, ignore_errors=True)
 
-print(f"Done: {copied} images got labels, {110 - copied} empty")
+empty = len(list(img_dir.glob("*.jpg"))) - copied
+print(f"Done: {copied} images got labels, {empty} empty")

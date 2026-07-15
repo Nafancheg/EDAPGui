@@ -1,56 +1,44 @@
-"""Auto-label remaining unlabeled frames using trained model."""
-from ultralytics import YOLO
-from pathlib import Path
+"""Auto-label remaining unlabeled frames using trained model.
+
+Run after prelabel_jetcone.py to fill in frames missed by HSV masks.
+Uses the trained best.pt model for inference.
+
+Usage:  python tools/auto_label_jetcone.py
+"""
+import sys
+import os
 import shutil
+from pathlib import Path
 
-BASE = Path(r"C:\Users\nafan\Documents\ED_Autopilot\Yolo26\jetcone-model\dataset\train")
-model = YOLO(str(BASE.parent.parent / "weights" / "best.pt"))
+from ultralytics import YOLO
 
-# Run inference with higher confidence threshold to avoid spam
+REPO = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = REPO / "Yolo26" / "jetcone-model"
+DATASET = MODEL_DIR / "dataset" / "train"
+
+model = YOLO(str(MODEL_DIR / "weights" / "best.pt"))
+
+img_dir = DATASET / "images"
+lbl_dir = DATASET / "labels"
+
+# Run inference on ALL train images with the trained model
 results = model.predict(
-    str(unlabeled_dir), save=False, save_txt=True, save_conf=False,
+    str(img_dir), save=False, save_txt=True, save_conf=False,
     conf=0.5, iou=0.5,
-    project=str(BASE), name="auto_labels2", exist_ok=True,
+    project=str(DATASET), name="auto_labels", exist_ok=True,
 )
-n = len(list(unlabeled_dir.glob("*.jpg")))
-print(f"Inference done on {n} images")
 
-# Move predicted labels
-auto_dir = BASE / "auto_labels2" / "labels"
+# Move predicted labels (overwrites existing)
+auto_dir = DATASET / "auto_labels" / "labels"
+copied = 0
 if auto_dir.exists():
-    copied = 0
     for f in auto_dir.glob("*.txt"):
         shutil.copy2(f, lbl_dir / f.name)
         copied += 1
-    print(f"Copied {copied} labels to {lbl_dir}")
 
-# Remove old auto_labels if exists
-old_auto = BASE / "auto_labels"
-if old_auto.exists():
-    shutil.rmtree(old_auto, ignore_errors=True)
-unlabeled_dir = BASE / "unlabeled"
-lbl_dir = BASE / "labels"
-img_dir = BASE / "images"
-
-# Run inference
-results = model.predict(
-    str(unlabeled_dir), save=False, save_txt=True, save_conf=False,
-    project=str(BASE), name="auto_labels", exist_ok=True,
-)
-n = len(list(unlabeled_dir.glob("*.jpg")))
-print(f"Inference done on {n} images")
-
-# Move predicted labels
-auto_dir = BASE / "auto_labels" / "labels"
-if auto_dir.exists():
-    for f in auto_dir.glob("*.txt"):
-        shutil.copy2(f, lbl_dir / f.name)
-    print(f"Labels moved to {lbl_dir}")
-
-# Move images back
-for f in unlabeled_dir.glob("*.jpg"):
-    shutil.move(str(f), str(img_dir / f.name))
+# Cleanup
+shutil.rmtree(auto_dir.parent, ignore_errors=True)
 
 total_img = len(list(img_dir.glob("*.jpg")))
 total_lbl = len(list(lbl_dir.glob("*.txt")))
-print(f"Done. {total_img} images, {total_lbl} labels")
+print(f"Done. {total_img} images, {total_lbl} labels, {copied} predicted by model")

@@ -29,7 +29,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(REPO_ROOT, "Yolo26", "jetcone-model", "captures")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-FRAME_EVERY = 30   # extract every N-th frame (~1/sec at 30fps)
+FRAME_EVERY = 25   # extract every N-th frame (~2.4/sec at 60fps)
 YT_FORMAT = "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440][ext=mp4]/best[height<=1440]"
 
 
