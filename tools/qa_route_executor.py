@@ -81,13 +81,14 @@ def main() -> int:
             check(f"activate rejects {label}", True)
     check("guarded activate stays INACTIVE", ex.snapshot() == {"active": False, "status": "INACTIVE"})
 
-    # --- activation + first segment ------------------------------------------ #
+    # --- activation + first target lock ---------------------------------------- #
     drv = GalaxyMapDriver()
     ex = RouteExecutor(FakeAP("Sol"), map_driver=drv)
     ex.activate(dict(ROUTE))
     s = ex.snapshot()
     check("activate: ACTIVE at journal location", s["status"] == "ACTIVE" and s["idx"] == 0, str(s))
-    check("activate: first segment target = next refuel", drv.last_target == "Alpha", str(drv.requests))
+    check("activate: driver locks the NEXT waypoint (not a segment plot)",
+          drv.last_target == "Alpha" and drv.requests == ["Alpha"], str(drv.requests))
     check("activate: snapshot fields", s["next_system"] == "Alpha" and s["segment_target"] == "Alpha"
           and s["remaining_jumps"] == 4 and s["jumps_total"] == 4
           and s["next_refuel_in"] == 1 and s["fuel_plan"] == 32.0, str(s))
@@ -105,22 +106,22 @@ def main() -> int:
     check("tick: same location -> no change", ex.tick("Sol", 32.0) is False)
     check("tick: empty location -> no change", ex.tick(None) is False)
 
-    # --- advance leg by leg ---------------------------------------------------- #
+    # --- advance leg by leg: EVERY arrival locks the next waypoint -------------- #
     changed = ex.tick("Alpha", 32.0)
     s = ex.snapshot()
     check("tick: jump to Alpha advances", changed and s["idx"] == 1 and s["status"] == "ACTIVE", str(s))
-    check("tick: refuel stop hands next segment to map driver",
-          drv.last_target == "Gamma", str(drv.requests))
+    check("tick: arrival locks the next waypoint", drv.last_target == "Beta", str(drv.requests))
     check("tick: fuel readback", s["fuel_actual"] == 32.0 and s["fuel_plan"] == 32.0, str(s))
+    check("tick: segment_target stays a display hint (next refuel)",
+          s["segment_target"] == "Gamma", str(s))
 
     ex.tick("Beta", 27.1)
-    s = ex.snapshot()
-    check("tick: mid-segment jump does NOT re-plot", drv.last_target == "Gamma"
-          and len(drv.requests) == 2 and s["idx"] == 2, str(drv.requests))
-    check("tick: case-insensitive match", ex.tick("gAMMA", 31.9) and ex.snapshot()["idx"] == 3)
-    check("tick: at Gamma the final segment target is the destination",
-          drv.last_target == "Colonia" and ex.snapshot()["segment_target"] == "Colonia",
+    check("tick: every jump retargets (per-waypoint, no game plotting)",
+          drv.last_target == "Gamma" and drv.requests == ["Alpha", "Beta", "Gamma"],
           str(drv.requests))
+    check("tick: case-insensitive match", ex.tick("gAMMA", 31.9) and ex.snapshot()["idx"] == 3)
+    check("tick: penultimate arrival locks the destination",
+          drv.last_target == "Colonia", str(drv.requests))
 
     # --- off-route and rejoin ---------------------------------------------------- #
     changed = ex.tick("Wrong Turn", 30.0)
@@ -128,16 +129,21 @@ def main() -> int:
     check("tick: unknown system -> OFF ROUTE (position kept)",
           changed and s["status"] == "OFF ROUTE" and s["off_route_at"] == "Wrong Turn"
           and s["idx"] == 3 and s["active"] is True, str(s))
+    check("tick: OFF ROUTE does not retarget", drv.last_target == "Colonia"
+          and len(drv.requests) == 4, str(drv.requests))
     check("tick: staying off route is not a new change", ex.tick("Wrong Turn", 30.0) is False)
     changed = ex.tick("Gamma", 31.0)
     s = ex.snapshot()
     check("tick: rejoin at current position -> ACTIVE again",
           changed and s["status"] == "ACTIVE" and s["off_route_at"] is None, str(s))
+    check("tick: rejoin re-issues the target lock",
+          drv.requests == ["Alpha", "Beta", "Gamma", "Colonia", "Colonia"], str(drv.requests))
 
-    # jump BACK along the plan is still on-route (not OFF ROUTE)
+    # jump BACK along the plan is still on-route (not OFF ROUTE) and retargets
     ex.tick("Beta", 28.0)
     s = ex.snapshot()
     check("tick: back-jump matches earlier waypoint", s["idx"] == 2 and s["status"] == "ACTIVE", str(s))
+    check("tick: back-jump retargets its next waypoint", drv.last_target == "Gamma", str(drv.requests))
     ex.tick("Gamma", 32.0)
 
     # --- completion ---------------------------------------------------------------- #

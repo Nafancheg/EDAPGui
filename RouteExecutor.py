@@ -4,21 +4,25 @@ Takes a Route dict plotted by RoutePlanner (FUEL-SAFE or FAST — the exact
 plotter profiles, where every leg and its fuel state are known) and walks it
 against the live journal location:
 
-  * the route is split into SEGMENTS ending at each must_refuel stop (and at
-    the final destination) — the chosen in-game entry strategy is
-    per-segment: the galaxy map gets the segment endpoint and the game plots
-    the jumps in between;
-  * every location change advances the position; reaching a segment endpoint
-    requests the next segment from the GalaxyMapDriver;
+  * per-WAYPOINT strategy (owner decision 2026-07-16): after every jump the
+    NEXT system of OUR plan is handed to the GalaxyMapDriver as a target
+    lock (метка) — the in-game route plotter is never used, because it
+    cannot plan through neutron/WD supercharge (x4/x6) and would refuse or
+    detour the boosted legs. Our physics (ShipFSD, bench-verified) already
+    guarantees every leg fits the current jump range, so a plain target
+    lock is always sufficient;
   * a location that is not on the route flips the state to OFF_ROUTE (and
     back to ACTIVE the moment the ship rejoins the plan);
   * reaching the destination flips to COMPLETE.
 
+Segments (runs ending at each must_refuel stop) remain a DISPLAY concept
+only: snapshot()["segment_target"] tells the MCDU where the next refuel is.
+
 GalaxyMapDriver is the game-side abstraction: on this laptop it is a stub
-that only records what would be typed into the galaxy map; the real
-keyboard/OCR driver (game part of Phase 8.1) replaces it with the same
-interface. Location updates come from the webserver's 1 Hz status tick
-(`tick()`), so this module needs no thread of its own.
+that only records the requested target; the real key/OCR driver (game part
+of Phase 8.1) replaces it with the same interface. Location updates come
+from the webserver's 1 Hz status tick (`tick()`), so this module needs no
+thread of its own.
 
 Like RoutePlanner, this module never imports the ED_AP core at runtime.
 """
@@ -46,18 +50,24 @@ class ExecuteError(Exception):
 
 
 class GalaxyMapDriver:
-    """Interface + laptop stub: records the system that would be entered into
-    the in-game galaxy map. The real driver (game part of 8.1) overrides
-    plot_to() with actual key/OCR input and returns False on failure."""
+    """Interface + laptop stub: records the system that would be target-locked
+    in the game. The real driver (game part of 8.1) overrides set_target()
+    with actual key/OCR input and returns False on failure.
+
+    set_target() means "lock this system as the FSD destination" (a metka in
+    the galaxy map / nav panel) — deliberately NOT the game's "plot route":
+    the in-game plotter cannot plan supercharged (x4/x6) legs and would break
+    FAST routes. The target is always within the current jump range because
+    the plan's legs are ShipFSD-validated."""
 
     def __init__(self):
         self.last_target: str | None = None
         self.requests: list[str] = []
 
-    def plot_to(self, system: str) -> bool:
+    def set_target(self, system: str) -> bool:
         self.last_target = system
         self.requests.append(system)
-        logger.info("GalaxyMapDriver(stub): would plot galaxy map to %r", system)
+        logger.info("GalaxyMapDriver(stub): would target-lock %r", system)
         return True
 
 
@@ -126,10 +136,11 @@ class RouteExecutor:
             self._idx = idx if idx is not None else 0
             self._status = ACTIVE
             self._off_route_at = None
-        target = self._segment_target(self._idx)
+            target = (systems[self._idx + 1].get("system")
+                      if self._idx + 1 < len(systems) else None)
         if target:
-            self.map_driver.plot_to(target)
-        logger.info("route activated: %s -> %s (%d legs), first segment target %r",
+            self.map_driver.set_target(target)
+        logger.info("route activated: %s -> %s (%d legs), first target %r",
                     route.get("source"), route.get("destination"),
                     len(systems) - 1, target)
 
@@ -144,49 +155,53 @@ class RouteExecutor:
 
     def tick(self, location: str | None, fuel_level: float | None = None) -> bool:
         """Advance against the latest journal location. Returns True when the
-        public snapshot changed (caller broadcasts it)."""
+        public snapshot changed (caller broadcasts it). Any target lock is
+        issued OUTSIDE the state lock — the real driver does slow key work."""
+        retarget = None
+        changed = False
         with self._lock:
             if self._status not in (ACTIVE, OFF_ROUTE) or not location:
                 return False
             self._last_fuel = fuel_level
+            systems = self._systems()
 
-            cur = self._systems()[self._idx].get("system") or ""
+            cur = systems[self._idx].get("system") or ""
             if location.lower() == cur.lower():
-                # still where we were; only a rejoin after OFF_ROUTE counts
+                # still where we were; only a rejoin after OFF_ROUTE counts —
+                # and the detour likely cleared the lock, so re-issue it
                 if self._status == OFF_ROUTE:
                     self._status = ACTIVE
                     self._off_route_at = None
-                    return True
-                return False
+                    changed = True
+                    if self._idx + 1 < len(systems):
+                        retarget = systems[self._idx + 1].get("system")
+            else:
+                found = self._find(location, self._idx + 1)
+                if found is None:
+                    # allow matching BEHIND the current index too (a re-log or
+                    # a manual back-jump keeps us on the plan, further back)
+                    found = self._find(location, 0)
+                if found is None:
+                    changed = (self._status != OFF_ROUTE
+                               or self._off_route_at != location)
+                    self._status = OFF_ROUTE
+                    self._off_route_at = location
+                else:
+                    self._idx = found
+                    self._off_route_at = None
+                    changed = True
+                    if found == len(systems) - 1:
+                        self._status = COMPLETE
+                        logger.info("route complete at %r", location)
+                    else:
+                        # per-waypoint strategy: every arrival locks the NEXT
+                        # system of OUR plan as the target
+                        self._status = ACTIVE
+                        retarget = systems[found + 1].get("system")
 
-            found = self._find(location, self._idx + 1)
-            if found is None:
-                # allow matching BEHIND the current index too (a re-log or a
-                # manual back-jump keeps us on the plan, just further back)
-                found = self._find(location, 0)
-            if found is None:
-                changed = self._status != OFF_ROUTE or self._off_route_at != location
-                self._status = OFF_ROUTE
-                self._off_route_at = location
-                return changed
-
-            was_target = self._segment_target(self._idx)
-            self._idx = found
-            self._off_route_at = None
-            if found == len(self._systems()) - 1:
-                self._status = COMPLETE
-                logger.info("route complete at %r", location)
-                return True
-            self._status = ACTIVE
-            arrived_segment_end = was_target and location.lower() == was_target.lower()
-
-        # segment endpoint reached -> hand the next segment to the map driver
-        # (outside the lock: the real driver will do slow key/OCR work)
-        if arrived_segment_end:
-            nxt = self._segment_target(self._idx)
-            if nxt:
-                self.map_driver.plot_to(nxt)
-        return True
+        if retarget:
+            self.map_driver.set_target(retarget)
+        return changed
 
     # --- snapshot ------------------------------------------------------------ #
 
