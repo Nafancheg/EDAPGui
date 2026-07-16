@@ -256,19 +256,76 @@ def ship_plot_params(loadout: dict) -> dict:
     }
 
 
+class ShipFSD:
+    """Jump-range / fuel-cost physics for one resolved loadout.
+
+    Single source of truth for the game's FSD equations — the validator,
+    the mechanics bench and the (future) route executor must all compute
+    through this class so their numbers agree.
+
+        base range   R(fuel) = opt/mass * (1000*min(max_fuel,fuel)/class_const)**(1/power)
+        full range   R_tot   = (R + boost) * supercharge      # guardian booster is a
+                                                              # flat +LY, neutron/WD
+                                                              # multiplies the total
+        fuel cost    f(d)    = class_const/1000 * (d_eff*mass/opt)**power
+                     d_eff   = d/supercharge * R/(R + boost)  # the boosted/supercharged
+                                                              # LY are fuel-free
+
+    d_eff is exact, not an approximation: a jump at the full boosted+supercharged
+    range costs exactly max_fuel_per_jump. Cross-checked leg-by-leg against the
+    Spansh exact plotter by tools/route_mechanics_bench.py.
+    """
+
+    def __init__(self, loadout: dict):
+        r = _resolve_fsd(loadout)
+        self.size_const = r["size_const"]
+        self.class_const = r["class_const"]
+        self.optimal_mass = r["optimal_mass"]
+        self.max_fuel = r["max_fuel"]
+        self.range_boost = r["range_boost"]
+        self.supercharge_multiplier = r["supercharge_multiplier"]
+        self.unladen_mass = r["unladen_mass"]
+        self.tank_size = r["tank_size"]
+        self.reserve_size = r["internal_tank_size"]
+
+    def mass(self, fuel: float, cargo: float = 0.0) -> float:
+        """Total ship mass with `fuel` t in the main tank (reserve always full)."""
+        return self.unladen_mass + self.reserve_size + fuel + cargo
+
+    def base_range(self, fuel: float, cargo: float = 0.0) -> float:
+        """Unboosted range (LY) for the fuel actually in the tank."""
+        usable = min(self.max_fuel, max(fuel, 0.0))
+        if usable <= 0:
+            return 0.0
+        core = (1000.0 * usable / self.class_const) ** (1.0 / self.size_const)
+        return self.optimal_mass * core / self.mass(fuel, cargo)
+
+    def jump_range(self, fuel: float, cargo: float = 0.0, supercharge: float = 1.0) -> float:
+        """Max jump distance (LY): guardian boost added, then supercharge applied."""
+        return (self.base_range(fuel, cargo) + self.range_boost) * supercharge
+
+    def fuel_cost(self, dist: float, fuel: float, cargo: float = 0.0,
+                  supercharge: float = 1.0) -> float:
+        """Fuel (t) burned by a jump of `dist` LY with `fuel` t aboard."""
+        if dist <= 0:
+            return 0.0
+        base = self.base_range(fuel, cargo)
+        d_eff = dist / supercharge
+        if self.range_boost > 0 and base > 0:
+            d_eff *= base / (base + self.range_boost)
+        mass = self.mass(fuel, cargo)
+        return (self.class_const / 1000.0) * (d_eff * mass / self.optimal_mass) ** self.size_const
+
+
 def max_range_from_loadout(loadout: dict) -> float:
-    """Fallback laden-empty jump range (LY) computed from the loadout.
+    """Fallback laden(full-tank) jump range (LY) computed from the loadout.
 
     Used for the FAST profile when the journal did not give us MaxJumpRange.
-    range = optimal_mass * (1000 * max_fuel / class_const) ** (1/size_const)
-            / (unladen + main_tank + reserve_tank) + range_boost
     """
-    r = _resolve_fsd(loadout)
-    total_mass = r["unladen_mass"] + r["tank_size"] + r["internal_tank_size"]
-    if total_mass <= 0:
+    fsd = ShipFSD(loadout)
+    if fsd.mass(fsd.tank_size) <= 0:
         raise PlotError("invalid ship mass in loadout")
-    core = (1000.0 * r["max_fuel"] / r["class_const"]) ** (1.0 / r["size_const"])
-    return r["optimal_mass"] * core / total_mass + r["range_boost"]
+    return fsd.jump_range(fsd.tank_size)
 
 
 # --------------------------------------------------------------------------- #

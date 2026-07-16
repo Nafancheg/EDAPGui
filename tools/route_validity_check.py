@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import aiohttp
 
-from RoutePlanner import EDSMClient, _resolve_fsd
+from RoutePlanner import EDSMClient, ShipFSD
 
 FAILS = []
 
@@ -89,30 +89,21 @@ def main():
           f"{sec['jumps']} jumps · {sec['dist_ly']} LY · scoops {sec['scoops']} · risk {sec['risk']}\n")
 
     # --- ship physics from the journal Loadout (independent of Spansh) ------
+    # ShipFSD is the shared FSD-physics model (exact guardian-booster scaling
+    # + neutron/WD supercharge), bench-verified against the Spansh exact
+    # plotter by tools/route_mechanics_bench.py.
     lo = load_loadout()
-    fsd = _resolve_fsd(lo)
-    tank = fsd["tank_size"]
-    reserve = fsd["internal_tank_size"]
-    unladen = fsd["unladen_mass"]
-    max_fuel = fsd["max_fuel"]
-    optimal = fsd["optimal_mass"]
-    power = fsd["size_const"]
-    class_const = fsd["class_const"]
-    mult = class_const / 1000.0
-    boost = fsd["range_boost"]
+    fsd = ShipFSD(lo)
+    tank = fsd.tank_size
+    max_fuel = fsd.max_fuel
+    # neutron legs only boost profiles plotted with use_supercharge (FAST);
+    # a FUEL-SAFE route never relies on supercharge.
+    supercharge_on = (sec.get("profile") or "").upper() != "FUEL-SAFE"
 
-    def jump_range(fuel_in_tank):
-        mass = unladen + reserve + fuel_in_tank
-        return (optimal * (1000.0 * min(max_fuel, fuel_in_tank) / class_const)
-                ** (1.0 / power) / mass) + boost
-
-    def fuel_cost(dist, fuel_in_tank):
-        mass = unladen + reserve + fuel_in_tank
-        return mult * (max(dist - boost, 0) * mass / optimal) ** power
-
-    rng_full = jump_range(tank)
-    print(f"Ship: {lo['Ship']}  unladen {unladen} t · tank {tank} t (+{reserve} reserve) · "
-          f"FSD opt {optimal} t · max/jump {max_fuel} t")
+    rng_full = fsd.jump_range(tank)
+    print(f"Ship: {lo['Ship']}  unladen {fsd.unladen_mass} t · tank {tank} t "
+          f"(+{fsd.reserve_size} reserve) · FSD opt {fsd.optimal_mass} t · "
+          f"max/jump {max_fuel} t · boost +{fsd.range_boost} LY")
     print(f"Max jump range (full tank): {rng_full:.2f} LY\n")
 
     # --- 1. leg distances vs EDSM coordinates -------------------------------
@@ -151,12 +142,14 @@ def main():
             ok_fuel = ok_reach = False
             break
         d = math.dist((a["x"], a["y"], a["z"]), (b["x"], b["y"], b["z"]))
-        rng = jump_range(fuel)
-        cost = fuel_cost(d, fuel)
+        mult = fsd.supercharge_multiplier if (supercharge_on and prev.get("neutron")) else 1.0
+        rng = fsd.jump_range(fuel, supercharge=mult)
+        cost = fsd.fuel_cost(d, fuel, supercharge=mult)
         reach = d <= rng * TOL_DIST
         burn_ok = cost <= max_fuel * TOL_FUEL and fuel - cost > -0.2
         log.append(f"  {prev['system']:<28}->{cur['system']:<28} {d:6.2f} LY  "
                    f"range {rng:5.2f}  burn {cost:4.2f} t  tank {max(fuel - cost, 0):5.2f} t"
+                   + (f"  SC x{mult:g}" if mult > 1 else "")
                    + ("  REFUEL" if cur["must_refuel"] else "")
                    + ("" if (reach and burn_ok) else "  <-- PROBLEM"))
         ok_reach = ok_reach and reach
