@@ -171,10 +171,14 @@ FAST_RESULT = {"result": {
 }}
 
 FUEL_SAFE_RESULT = {"result": {"jumps": [
-    {"name": "Sol", "distance": 0.0, "is_scoopable": True, "must_refuel": False, "has_neutron": False},
-    {"name": "Alpha", "distance": 30.0, "is_scoopable": True, "must_refuel": True, "has_neutron": False},
-    {"name": "Beta", "distance": 28.0, "is_scoopable": False, "must_refuel": False, "has_neutron": False},
-    {"name": "Gamma", "distance": 31.0, "is_scoopable": True, "must_refuel": True, "has_neutron": False},
+    {"name": "Sol", "distance": 0.0, "is_scoopable": True, "must_refuel": False, "has_neutron": False,
+     "fuel_used": 0.0, "fuel_in_tank": 32.0},
+    {"name": "Alpha", "distance": 30.0, "is_scoopable": True, "must_refuel": True, "has_neutron": False,
+     "fuel_used": 4.1, "fuel_in_tank": 32.0},
+    {"name": "Beta", "distance": 28.0, "is_scoopable": False, "must_refuel": False, "has_neutron": True,
+     "fuel_used": 3.7, "fuel_in_tank": 28.3},
+    {"name": "Gamma", "distance": 31.0, "is_scoopable": True, "must_refuel": True, "has_neutron": False,
+     "fuel_used": 4.4, "fuel_in_tank": 32.0},
 ]}}
 
 
@@ -227,7 +231,7 @@ def check_plot_fast():
     client = SpanshClient(session=sess, poll_interval=0.0, timeout=5.0)
     route = client.plot_fast("Sol", "Colonia", 34.5)
     ok = (
-        route["profile"] == "FAST"
+        route["profile"] == "ULTRA"
         and route["risk"] == "HIGH"
         and route["scoops"] is None
         and route["jumps"] == 14                # 0 + 8 + 6
@@ -238,7 +242,7 @@ def check_plot_fast():
         and all(s["scoopable"] is None for s in route["systems"])
         and sess.posts and "api/route" in sess.posts[0][0]
     )
-    check("plot_fast: submit/poll/normalise (jumps=sum, risk HIGH, scoops None)", ok, detail=str(route))
+    check("plot_fast: submit/poll/normalise (ULTRA, jumps=sum, scoops None)", ok, detail=str(route))
 
 
 def check_plot_fuel_safe():
@@ -258,8 +262,31 @@ def check_plot_fuel_safe():
         and route["systems"][0]["dist_ly"] is None
         and abs(route["dist_ly"] - (30.0 + 28.0 + 31.0)) < 1e-6
         and "generic/route" in sess.posts[0][0]
+        and sess.posts[0][1].get("use_supercharge") == 0
+        and route["systems"][1]["fuel_used"] == 4.1     # Spansh fuel model kept
+        and route["systems"][2]["fuel_tank"] == 28.3
+        and route["systems"][0]["fuel_used"] is None    # start system burns nothing
     )
     check("plot_fuel_safe: normalise (jumps=len-1, scoops=sum must_refuel, LOW)", ok, detail=str(route))
+
+    # FAST = same exact plotter with use_supercharge=1, labelled FAST/HIGH.
+    sess2 = FakeSpanshSession(poll_payloads=[
+        {"status": "queued"},
+        FUEL_SAFE_RESULT,
+    ])
+    client2 = SpanshClient(session=sess2, poll_interval=0.0, timeout=5.0)
+    route2 = client2.plot_fuel_safe("Sol", "Gamma", ship_plot_params(loadout_plain()),
+                                    supercharge=True)
+    ok2 = (
+        route2["profile"] == "FAST"
+        and route2["risk"] == "HIGH"
+        and route2["scoops"] == 2               # fuel model intact on FAST
+        and route2["systems"][2]["neutron"] is True
+        and "generic/route" in sess2.posts[0][0]
+        and sess2.posts[0][1].get("use_supercharge") == 1
+    )
+    check("plot_fuel_safe(supercharge): FAST/HIGH via exact plotter, use_supercharge=1",
+          ok2, detail=str(route2))
 
 
 def check_poll_timeout():
@@ -341,36 +368,42 @@ def check_busy_guard():
 
 def check_planner_plot_end_to_end():
     # Bonus: exercise RoutePlanner.plot_secondary through a fake Spansh client
-    # (source from ship_state location, dest default from nav route).
-    sess = FakeSpanshSession(poll_payloads=[{"status": "queued"}, FAST_RESULT])
+    # (source from ship_state location, dest default from nav route). The FAST
+    # profile now goes through the exact plotter with use_supercharge=1.
+    sess = FakeSpanshSession(poll_payloads=[{"status": "queued"}, FUEL_SAFE_RESULT])
     spansh = SpanshClient(session=sess, poll_interval=0.0, timeout=5.0)
     nav = {"event": "NavRoute", "Route": [
-        {"StarSystem": "Sol"}, {"StarSystem": "Colonia"}]}
-    ap = FakeAP({"location": "Sol", "max_jump_range": 34.5}, nav_data=nav)
+        {"StarSystem": "Sol"}, {"StarSystem": "Gamma"}]}
+    ap = FakeAP({"location": "Sol", "loadout_raw": loadout_plain()}, nav_data=nav)
     planner = RoutePlanner(ap, spansh=spansh)
     planner.plot_secondary(dest=None, profile="fast")  # dest defaults to nav route end
     snap = planner.snapshot()
     ok = (
         snap["error"] is None and snap["busy"] is False
         and snap["secondary"] is not None
-        and snap["secondary"]["destination"] == "Colonia"
-        and snap["secondary"]["jumps"] == 14
+        and snap["secondary"]["profile"] == "FAST"
+        and snap["secondary"]["destination"] == "Gamma"
+        and snap["secondary"]["jumps"] == 3
+        and "generic/route" in sess.posts[0][0]
+        and sess.posts[0][1].get("use_supercharge") == 1
+        and sess.posts[0][1].get("range_boost") == 10.5    # ship config reaches Spansh
     )
-    check("plot_secondary: end-to-end with default dest + snapshot", ok, detail=str(snap))
+    check("plot_secondary: FAST end-to-end via exact plotter + snapshot", ok, detail=str(snap))
 
 
 def check_max_range_fallback():
-    # FAST range fallback: no max_jump_range in state -> computed from loadout.
+    # ULTRA (neutron plotter) range fallback: no max_jump_range in the state ->
+    # the submitted range is computed from the loadout via ShipFSD.
     sess = FakeSpanshSession(poll_payloads=[FAST_RESULT])
     spansh = SpanshClient(session=sess, poll_interval=0.0, timeout=5.0)
     state = {"location": "Sol", "loadout_raw": loadout_plain()}  # no max_jump_range key
     planner = RoutePlanner(FakeAP(state), spansh=spansh)
-    planner.plot_secondary(dest="Colonia", profile="fast")
+    planner.plot_secondary(dest="Colonia", profile="ultra")
     snap = planner.snapshot()
     # The submitted 'range' must be a positive number derived from the loadout.
     submitted_range = sess.posts[0][1].get("range")
     ok = snap["error"] is None and isinstance(submitted_range, float) and submitted_range > 0
-    check("fast range fallback: computed from loadout when MaxJumpRange missing", ok,
+    check("ultra range fallback: computed from loadout when MaxJumpRange missing", ok,
           detail=f"range={submitted_range} err={snap['error']}")
 
 

@@ -84,7 +84,7 @@ class FakeRoutePlanner:
         self._direct_result = direct_result
         self._direct_raises = direct_raises
 
-    def plot_secondary(self, dest=None, profile="fuel_safe"):
+    def plot_secondary(self, dest=None, profile="fuel_safe", source=None):
         if self._plot_raises is not None:
             raise self._plot_raises
         if self._plot_result is not None:

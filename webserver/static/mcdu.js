@@ -58,6 +58,7 @@
     secConfirm: false,       // SEC F-PLN L3 <ACTIVATE SEC two-step confirm armed?
     sec: null,                // last sec_route payload: {secondary, dir, busy, error, compare}
     secDest: '',              // local SEC DEST [E] input (SEC R1)
+    secFrom: '',              // local SEC FROM [E] override (SEC L4); empty = journal location
     secBusy: false,           // true between sec_plot_started and the next sec_route
     secListPage: 0,           // SECLIST scroll: top line index of the SECLIST_WIN window
     dir: null,                // last DirCandidate from dir_state (DIR page)
@@ -1006,7 +1007,16 @@
 
     var pScoops = secCompareNum(primary.scoops);
     var sScoops = secCompareNum(secondary && secondary.scoops);
-    fill(3, { rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal' });
+    // L4 SEC FROM [E]: manual plot origin (default — current journal
+    // location); lets a route be planned "from anywhere" before flying there.
+    var fromVal = S.secFrom || (S.snap && S.snap.location) || '________';
+    fill(3, {
+      lh: 'SEC FROM', lv: fromVal, lvs: S.secFrom ? 's-cyan' : 's-muted',
+      rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal'
+    });
+    // empty-scratchpad press reverts the override to the journal location
+    actions.L[3] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
+                     input: secFromInput };
 
     var risk = secondary && secondary.risk;
     fill(4, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
@@ -1029,6 +1039,16 @@
     return true;
   }
 
+  // L4 SEC FROM [E]: plot-origin override. Validation is server-side (EDSM);
+  // an unknown system comes back as a sec_route error from sec.plot.
+  function secFromInput(v) {
+    var t = v.trim();
+    if (!t) return false;
+    S.secFrom = t;
+    render();
+    return true;
+  }
+
   // L1/L2 PLOT actions: while a plot is already running (S.secBusy, set from
   // sec_plot_started until the matching sec_route lands) further presses just
   // flash instead of re-sending — the backend's own busy-guard would reject
@@ -1044,6 +1064,7 @@
     if (!ensureConn()) return;
     var body = { cmd: 'sec.plot', profile: profile };
     if (S.secDest) body.dest = S.secDest;
+    if (S.secFrom) body.source = S.secFrom;
     sendRaw(body);
   }
 
@@ -1056,7 +1077,9 @@
     if (S.secBusy) { flash('PLOTTING…', 1200); return 'keep'; }
     if (!ensureConn()) return 'keep';
     S.secDest = t;
-    sendRaw({ cmd: 'sec.plot', profile: profile, dest: t });
+    var body = { cmd: 'sec.plot', profile: profile, dest: t };
+    if (S.secFrom) body.source = S.secFrom;
+    sendRaw(body);
     render();
     return true;
   }

@@ -423,7 +423,7 @@ Phase 8.1 and is a stub for now — see §1 of the design doc.
 
 | Command | Params | Response / broadcast |
 |---|---|---|
-| `sec.plot` | `profile: "fuel_safe"\|"fast"`, `dest?: str` | ack `{"type":"sec_plot_started"}` on the requesting socket, then (after the blocking Spansh round-trip runs in an executor) broadcast `{"type":"sec_route","data":<sec_route data>}` to all clients. Ordinary plotting failures (no destination, no loadout, unknown profile, HTTP/timeout errors) are captured inside `data.error`, not raised — the broadcast still fires. Only the busy-guard (`plot_secondary` called while a plot is already running) surfaces as `{"type":"error","text":"PLOT IN PROGRESS"}` instead of a broadcast. |
+| `sec.plot` | `profile: "fuel_safe"\|"fast"\|"ultra"`, `dest?: str`, `source?: str` | ack `{"type":"sec_plot_started"}` on the requesting socket, then (after the blocking Spansh round-trip runs in an executor) broadcast `{"type":"sec_route","data":<sec_route data>}` to all clients. Ordinary plotting failures (no destination, no loadout, unknown profile, HTTP/timeout errors) are captured inside `data.error`, not raised — the broadcast still fires. Only the busy-guard (`plot_secondary` called while a plot is already running) surfaces as `{"type":"error","text":"PLOT IN PROGRESS"}` instead of a broadcast. `source` (SEC FROM [E]) overrides the journal location as the plot origin; it is EDSM-validated, an unknown name lands in `data.error` as `unknown FROM system: ...`. |
 | `sec.get` | — | direct reply (not broadcast) `{"type":"sec_route","data":<sec_route data>}` — same payload shape as the `sec.plot` broadcast, for a client that just (re)connected. |
 | `sec.activate` | — | always `{"type":"error","text":"NOT AVAILABLE — требует ввода маршрута в игру (игровая часть 8.1)"}`. Stub until the in-game galaxy-map driving is implemented. |
 | `dir.nearest` | `scoopable: bool` | ack `{"type":"dir_started"}`, then broadcast `{"type":"dir_state","data":<planner snapshot>}` once the EDSM sphere-cascade lookup (executor) finishes. A failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}` instead. |
@@ -458,17 +458,23 @@ against):
 ### `Route` dict (`secondary`, when present)
 
 ```json
-{"profile": "FUEL-SAFE"|"FAST", "source": "...", "destination": "...",
+{"profile": "FUEL-SAFE"|"FAST"|"ULTRA", "source": "...", "destination": "...",
  "jumps": int, "dist_ly": float, "scoops": int|null, "risk": "LOW"|"HIGH",
  "plotted_at": "<iso>",
  "systems": [{"system": "...", "dist_ly": float|null, "scoopable": bool|null,
-              "neutron": bool, "must_refuel": bool}, ...]}
+              "neutron": bool, "must_refuel": bool,
+              "fuel_used": float|null, "fuel_tank": float|null}, ...]}
 ```
 
-`systems[0]` is the starting system (`dist_ly` null). FUEL-SAFE models every
-jump's fuel use (`scoops` = count of `must_refuel` hops, `risk` "LOW"); FAST
-is the neutron-plotter's waypoint list (fuel not modelled, `scoops` null,
-`risk` "HIGH"). See `design/route-planner-backend.md` §4 for the full
+`systems[0]` is the starting system (`dist_ly`/`fuel_used` null). FUEL-SAFE
+and FAST both come from the Spansh exact plotter with the full ship config
+and per-jump fuel model (`fuel_used` = tonnes burned by the jump into this
+system, `fuel_tank` = level after arriving and refuelling when `must_refuel`
+is set; `scoops` = count of `must_refuel` hops). FAST adds
+`use_supercharge=1` — neutron/WD boosted legs (incl. the SCO MkII x6 drive),
+`risk` "HIGH". ULTRA is the range-only neutron-plotter waypoint list for
+very long hauls (fuel not modelled: `scoops` null, `fuel_*` null); it is not
+exposed in the MCDU. See `design/route-planner-backend.md` §4 for the full
 per-profile breakdown.
 
 ### `DirCandidate` dict (`dir`, when present)

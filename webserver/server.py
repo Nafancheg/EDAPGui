@@ -414,7 +414,8 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         # PlotError escapes as the executor future's exception.
         planner = _get_route_planner(ed_ap)
         loop = asyncio.get_running_loop()
-        fut = loop.run_in_executor(None, planner.plot_secondary, cmd.get("dest"), cmd.get("profile"))
+        fut = loop.run_in_executor(None, planner.plot_secondary, cmd.get("dest"),
+                                   cmd.get("profile"), cmd.get("source"))
 
         def _sec_plot_done(f, _bc=broadcaster, _ap=ed_ap, _planner=planner):
             exc = f.exception()

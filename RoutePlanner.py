@@ -6,11 +6,14 @@ here is pure request/response plumbing plus a small in-memory state holder;
 the blocking calls are meant to be driven from the webserver through
 run_in_executor (same pattern CalibrationStore/calibration uses).
 
-Two plotting profiles, normalised into one Route dict:
-  * FUEL-SAFE — Spansh galaxy plotter (/api/generic/route): every jump is
+Plotting profiles, normalised into one Route dict:
+  * FUEL-SAFE — Spansh exact plotter (/api/generic/route): every jump is
     modelled with fuel usage, so scoop stops (must_refuel) are known; risk LOW.
-  * FAST      — Spansh neutron plotter (/api/route): system_jumps are the
-    neutron re-plot WAYPOINTS (jumps-per-leg), fuel is NOT modelled; risk HIGH.
+  * FAST      — same exact plotter with use_supercharge=1: neutron/WD boosts
+    (incl. the SCO MkII x6 drive) with the fuel model intact; risk HIGH.
+  * ULTRA     — Spansh neutron plotter (/api/route): system_jumps are the
+    neutron re-plot WAYPOINTS (jumps-per-leg), fuel is NOT modelled. Kept for
+    very long hauls where the exact plotter is too slow; not exposed in MCDU.
 
 The FSD constant tables below are game data (sizes/classes/optimal masses,
 incl. the SCO overcharge drives and the guardian FSD boosters). The values
@@ -357,8 +360,9 @@ def _round(value, digits=2):
 
 
 def _normalize_fast(result: dict, source: str) -> dict:
-    """Neutron plotter result -> Route. system_jumps are WAYPOINTS: 'jumps' is
-    the number of jumps to reach that waypoint, so total jumps = sum(jumps)."""
+    """Neutron plotter result -> Route (ULTRA profile). system_jumps are
+    WAYPOINTS: 'jumps' is the number of jumps to reach that waypoint, so total
+    jumps = sum(jumps)."""
     waypoints = result.get("system_jumps") or []
     systems = []
     total_jumps = 0
@@ -373,7 +377,7 @@ def _normalize_fast(result: dict, source: str) -> dict:
         })
     destination = result.get("destination_system") or (systems[-1]["system"] if systems else "")
     return {
-        "profile": "FAST",
+        "profile": "ULTRA",
         "source": result.get("source_system") or source,
         "destination": destination,
         "jumps": total_jumps,
@@ -385,9 +389,12 @@ def _normalize_fast(result: dict, source: str) -> dict:
     }
 
 
-def _normalize_fuel_safe(result: dict, source: str) -> dict:
-    """Galaxy plotter result -> Route. 'jumps' here are EVERY jump with fuel
-    usage; scoop stops are the must_refuel legs. jumps = len(systems) - 1."""
+def _normalize_fuel_safe(result: dict, source: str,
+                         profile: str = "FUEL-SAFE", risk: str = "LOW") -> dict:
+    """Galaxy (exact) plotter result -> Route. 'jumps' here are EVERY jump with
+    fuel usage; scoop stops are the must_refuel legs. jumps = len(systems) - 1.
+    fuel_used/fuel_tank carry Spansh's own per-jump fuel model (fuel_tank is
+    the level after arriving and refuelling when must_refuel is set)."""
     hops = result.get("jumps") or []
     systems = []
     scoops = 0
@@ -405,15 +412,17 @@ def _normalize_fuel_safe(result: dict, source: str) -> dict:
             "scoopable": bool(hop.get("is_scoopable")),
             "neutron": bool(hop.get("has_neutron")),
             "must_refuel": must_refuel,
+            "fuel_used": None if i == 0 else _round(hop.get("fuel_used")),
+            "fuel_tank": _round(hop.get("fuel_in_tank")),
         })
     return {
-        "profile": "FUEL-SAFE",
+        "profile": profile,
         "source": systems[0]["system"] if systems else source,
         "destination": systems[-1]["system"] if systems else "",
         "jumps": max(len(systems) - 1, 0),
         "dist_ly": _round(total_dist),
         "scoops": scoops,
-        "risk": "LOW",
+        "risk": risk,
         "plotted_at": _now_iso(),
         "systems": systems,
     }
@@ -473,11 +482,19 @@ class SpanshClient:
         job = self._submit(self.FAST_URL, form)
         return _normalize_fast(self._poll(job), source)
 
-    def plot_fuel_safe(self, source: str, dest: str, ship_params: dict) -> dict:
+    def plot_fuel_safe(self, source: str, dest: str, ship_params: dict,
+                       supercharge: bool = False) -> dict:
+        """Exact plotter with the full ship config. supercharge=True enables
+        neutron/WD boosts (the FAST profile): fuel is still fully modelled, so
+        refuel stops stay known — unlike the range-only neutron plotter."""
         form = dict(ship_params)
+        if supercharge:
+            form["use_supercharge"] = 1
         form["source"] = source
         form["destination"] = dest
         job = self._submit(self.FUEL_SAFE_URL, form)
+        if supercharge:
+            return _normalize_fuel_safe(self._poll(job), source, profile="FAST", risk="HIGH")
         return _normalize_fuel_safe(self._poll(job), source)
 
 
@@ -578,10 +595,13 @@ class RoutePlanner:
 
     # --- blocking operations ---------------------------------------------- #
 
-    def plot_secondary(self, dest: str | None = None, profile: str = "fuel_safe") -> None:
+    def plot_secondary(self, dest: str | None = None, profile: str = "fuel_safe",
+                       source: str | None = None) -> None:
         """Plot the secondary route into self._secondary (blocking).
 
-        Busy re-entry raises PlotError; plotting failures are captured in
+        `source` overrides the journal location (the SEC F-PLN FROM field) so
+        a route can be planned from anywhere before flying there. Busy
+        re-entry raises PlotError; plotting failures are captured in
         self._error so the broadcast snapshot carries them.
         """
         with self._lock:
@@ -590,7 +610,7 @@ class RoutePlanner:
             self._busy = True
             self._error = None
         try:
-            route = self._do_plot(dest, profile)
+            route = self._do_plot(dest, profile, source)
             with self._lock:
                 self._secondary = route
         except PlotError as e:
@@ -600,8 +620,19 @@ class RoutePlanner:
             with self._lock:
                 self._busy = False
 
-    def _do_plot(self, dest: str | None, profile: str) -> dict:
-        source = self._current_location()
+    def _resolve_source(self, source: str | None) -> str:
+        """Manual FROM override (EDSM-validated to its canonical name), else
+        the journal location."""
+        source = (source or "").strip()
+        if not source:
+            return self._current_location()
+        info = self._edsm.system(source)
+        if not info:
+            raise PlotError(f"unknown FROM system: {source}")
+        return info.get("name") or source
+
+    def _do_plot(self, dest: str | None, profile: str, source: str | None = None) -> dict:
+        source = self._resolve_source(source)
         if not dest:
             dest = self._default_dest()
         if not dest:
@@ -609,9 +640,17 @@ class RoutePlanner:
 
         key = (profile or "").lower().replace("-", "_")
         if key == "fast":
-            return self._spansh.plot_fast(source, dest, self._fast_range())
+            # FAST = exact plotter with neutron/WD supercharge: the full ship
+            # config (guardian booster, SCO MkII x6, engineering) is respected
+            # AND fuel is modelled, so the route is executable segment-wise.
+            return self._spansh.plot_fuel_safe(
+                source, dest, ship_plot_params(self._loadout()), supercharge=True)
         if key in ("fuel_safe", "fuelsafe"):
             return self._spansh.plot_fuel_safe(source, dest, ship_plot_params(self._loadout()))
+        if key == "ultra":
+            # range-only neutron plotter: no fuel model, but handles the very
+            # long hauls (Colonia-class) much faster than the exact plotter.
+            return self._spansh.plot_fast(source, dest, self._fast_range())
         raise PlotError(f"unknown route profile: {profile!r}")
 
     def nearest(self, scoopable: bool) -> None:
