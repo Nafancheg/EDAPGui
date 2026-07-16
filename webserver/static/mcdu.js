@@ -347,7 +347,7 @@
   // ---- scratchpad ----
   function flash(msg, dur) {
     if (!S.flash) S.flashSaved = S.scratch;
-    S.flash = msg;
+    S.flash = t(msg);
     renderScratch();
     if (flash._t) clearTimeout(flash._t);
     flash._t = setTimeout(function () {
@@ -669,12 +669,16 @@
   }
 
   // ---- render helpers ----
+  // UI language: translation happens HERE, at the render layer only — data
+  // and commands never see translated strings (see mcdu_i18n.js).
+  function t(s) { return window.MCDU_I18N ? window.MCDU_I18N.t(s) : s; }
+
   function fill(i, o) {
     var r = rows[i];
-    r.lhead.textContent = o.lh || '';
-    r.rhead.textContent = o.rh || '';
-    r.lval.textContent = o.lv || '';
-    r.rval.textContent = o.rv || '';
+    r.lhead.textContent = t(o.lh) || '';
+    r.rhead.textContent = t(o.rh) || '';
+    r.lval.textContent = t(o.lv) || '';
+    r.rval.textContent = t(o.rv) || '';
     r.lval.className = 'lval' + (o.lvs ? ' ' + o.lvs : '');
     r.rval.className = 'rval' + (o.rvs ? ' ' + o.rvs : '');
     r.el.classList.toggle('row--center', !!o.center);
@@ -1540,8 +1544,16 @@
     for (var i = 0; i < 6; i++) clearRow(i);
 
     var voiceOn = !!S.cfg.VoiceEnable;
-    fill(0, { lv: voiceOn ? '<VOICE  ON' : '<VOICE  OFF', lvs: voiceOn ? 's-on' : 's-off' });
+    // R1: MCDU display language (pure UI preference, localStorage — not the
+    // core's OCR Language setting)
+    var ru = window.MCDU_I18N && window.MCDU_I18N.getLang() === 'ru';
+    fill(0, { lv: voiceOn ? '<VOICE  ON' : '<VOICE  OFF', lvs: voiceOn ? 's-on' : 's-off',
+              rh: 'UI LANG', rv: (ru ? 'РУС' : 'ENG') + '>', rvs: 's-cyan' });
     actions.L[0] = { press: voiceToggle, input: null };
+    actions.R[0] = { press: function () {
+      if (window.MCDU_I18N) window.MCDU_I18N.setLang(ru ? 'en' : 'ru');
+      render();
+    }, input: null };
 
     var overlayOn = !!S.cfg.OverlayTextEnable;
     fill(1, { lv: overlayOn ? '<OVERLAY  ON' : '<OVERLAY  OFF', lvs: overlayOn ? 's-on' : 's-off' });
@@ -2110,8 +2122,8 @@
   // header contract: row 1 = page title + context indicator (page N/M or phase
   // name; muted when the viewed context is not the active one), row 2 = AP/MODE
   function setHeader(title, ind, muted) {
-    scrTitle.textContent = title;
-    scrInd.textContent = ind || '';
+    scrTitle.textContent = t(title);
+    scrInd.textContent = t(ind) || '';
     scrInd.className = 'title-ind' + (muted ? ' muted' : '');
   }
 
