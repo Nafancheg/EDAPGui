@@ -55,14 +55,17 @@ class FakeNavRoute:
 class FakeAP:
     """Minimal ed_ap stand-in: only what create_app()/handle_ws()/
     route_primary_stats() touch. The route planner itself is faked
-    separately (module singleton), so ed_ap.jn is never needed."""
+    separately (module singleton), so ed_ap.jn is never needed.
+    `status` is mutable so a check can move the ship: the 1 Hz snapshot loop
+    feeds it to the route executor's tick()."""
 
     def __init__(self, nav_data=None):
         self.ap_ckb = None  # not a Broadcaster -> create_app makes a fresh one
         self.nav_route = FakeNavRoute(nav_data)
+        self.status = {}
 
     def get_status_dict(self):
-        return {}
+        return dict(self.status)
 
 
 class FakeRoutePlanner:
@@ -141,21 +144,53 @@ FAKE_SECONDARY = {
                  "neutron": False, "must_refuel": False}],
 }
 
+# Executable secondary for the sec.activate / executor checks:
+# Sol -> Alpha (refuel stop = first segment endpoint) -> Colonia.
+EXEC_ROUTE = {
+    "profile": "FUEL-SAFE", "source": "Sol", "destination": "Colonia",
+    "jumps": 2, "dist_ly": 60.0, "scoops": 1, "risk": "LOW",
+    "plotted_at": "2026-07-16T00:00:00+00:00",
+    "systems": [
+        {"system": "Sol", "dist_ly": None, "scoopable": True, "neutron": False,
+         "must_refuel": False, "fuel_used": None, "fuel_tank": 32.0},
+        {"system": "Alpha", "dist_ly": 30.0, "scoopable": True, "neutron": False,
+         "must_refuel": True, "fuel_used": 4.0, "fuel_tank": 32.0},
+        {"system": "Colonia", "dist_ly": 30.0, "scoopable": True, "neutron": False,
+         "must_refuel": False, "fuel_used": 4.0, "fuel_tank": 28.0},
+    ],
+}
+
 
 # --------------------------------------------------------------------------- #
 # WS helpers
 # --------------------------------------------------------------------------- #
 
 async def collect(ws, n: int, timeout: float = 5.0) -> list[dict]:
-    """Read exactly n JSON messages (order not assumed -- see by_type)."""
+    """Read exactly n JSON messages (order not assumed -- see by_type),
+    skipping the periodic status_snapshot broadcasts: the QA status loop
+    ticks fast and would otherwise interleave them into every check."""
     msgs = []
-    for _ in range(n):
-        msgs.append(await asyncio.wait_for(ws.receive_json(), timeout=timeout))
+    async with asyncio.timeout(timeout):
+        while len(msgs) < n:
+            m = await ws.receive_json()
+            if m.get("type") == "status_snapshot":
+                continue
+            msgs.append(m)
     return msgs
 
 
 def by_type(msgs: list[dict]) -> dict[str, dict]:
     return {m.get("type"): m for m in msgs}
+
+
+async def recv_type(ws, wanted: tuple, timeout: float = 6.0) -> dict:
+    """Next message whose type is in `wanted`, skipping the periodic
+    status_snapshot broadcasts from the 1 Hz loop."""
+    async with asyncio.timeout(timeout):
+        while True:
+            m = await ws.receive_json()
+            if m.get("type") in wanted:
+                return m
 
 
 # --------------------------------------------------------------------------- #
@@ -204,11 +239,62 @@ async def check_sec_plot_busy(ws):
     check("sec.plot: busy-guard PlotError -> error PLOT IN PROGRESS", ok, detail=str(msgs))
 
 
-async def check_sec_activate(ws):
+async def check_sec_activate(ws, fake_ap):
+    # (a) no plotted secondary -> clean error, executor stays inactive
+    set_planner(secondary=None)
+    server._route_executor = None
     await ws.send_json({"cmd": "sec.activate"})
-    m = (await collect(ws, 1))[0]
-    ok = m.get("type") == "error" and "NOT AVAILABLE" in (m.get("text") or "")
-    check("sec.activate: stub -> error NOT AVAILABLE", ok, detail=str(m))
+    m = await recv_type(ws, ("error",))
+    check("sec.activate: no SEC route -> error", "NO SEC ROUTE" in (m.get("text") or ""), str(m))
+
+    # (b) executable secondary -> real activation, exec_state broadcast
+    set_planner(secondary=dict(EXEC_ROUTE))
+    await ws.send_json({"cmd": "sec.activate"})
+    m = await recv_type(ws, ("exec_state",))
+    d = m.get("data") or {}
+    ok = (
+        d.get("active") is True and d.get("status") == "ACTIVE"
+        and d.get("idx") == 0 and d.get("jumps_total") == 2
+        and d.get("segment_target") == "Alpha"     # first refuel stop
+        and d.get("map_target") == "Alpha"         # stub driver got the segment
+        and d.get("next_refuel_in") == 1
+    )
+    check("sec.activate: executable route -> exec_state ACTIVE, segment to map driver", ok, str(d))
+
+    # (c) the 1 Hz status tick advances the executor on a location change
+    fake_ap.status["location"] = "Alpha"
+    m = await recv_type(ws, ("exec_state",))
+    d = m.get("data") or {}
+    ok = (
+        d.get("idx") == 1 and d.get("status") == "ACTIVE"
+        and d.get("map_target") == "Colonia"       # refuel stop -> next segment plotted
+        and d.get("next_system") == "Colonia" and d.get("remaining_jumps") == 1
+    )
+    check("status tick: FSD jump advances executor + hands next segment", ok, str(d))
+
+    # (d) off route and back
+    fake_ap.status["location"] = "Wrong Turn"
+    m = await recv_type(ws, ("exec_state",))
+    d = m.get("data") or {}
+    check("status tick: unknown system -> OFF ROUTE",
+          d.get("status") == "OFF ROUTE" and d.get("off_route_at") == "Wrong Turn", str(d))
+
+    # (e) destination -> COMPLETE
+    fake_ap.status["location"] = "Colonia"
+    m = await recv_type(ws, ("exec_state",))
+    d = m.get("data") or {}
+    check("status tick: destination -> COMPLETE",
+          d.get("status") == "COMPLETE" and d.get("active") is False, str(d))
+
+    # (f) exec.get / exec.stop round-trip
+    await ws.send_json({"cmd": "exec.get"})
+    m = await recv_type(ws, ("exec_state",))
+    check("exec.get: returns current executor state",
+          (m.get("data") or {}).get("status") == "COMPLETE", str(m))
+    await ws.send_json({"cmd": "exec.stop"})
+    m = await recv_type(ws, ("exec_state",))
+    check("exec.stop: deactivates the executor",
+          (m.get("data") or {}).get("status") == "INACTIVE", str(m))
 
 
 async def check_dir_nearest(ws):
@@ -255,24 +341,37 @@ async def run_all() -> None:
     test_server = TestServer(app)
     client = TestClient(test_server)
     await client.start_server()
+    # The status/executor tick normally runs in the launcher (edap_headless /
+    # demo server) -- start the real loop here so the executor checks can
+    # drive it, with a fast interval to keep the QA quick.
+    status_task = asyncio.create_task(
+        server._status_snapshot_loop(fake_ap, _broadcaster, 0.1))
     try:
         ws = await client.ws_connect("/ws")
         try:
-            # drain the connect-time hello + status_snapshot before the checks.
-            initial = await collect(ws, 2)
-            ok = by_type(initial).keys() == {"hello", "status_snapshot"}
+            # connect-time hello (snapshots are skipped by collect) + prove
+            # the status stream itself is flowing.
+            initial = await collect(ws, 1)
+            ok = initial[0].get("type") == "hello"
+            snap = await recv_type(ws, ("status_snapshot",))
+            ok = ok and snap.get("type") == "status_snapshot"
             check("ws connect: initial hello + status_snapshot", ok, detail=str(initial))
 
             await check_sec_get(ws)
             await check_sec_plot_success(ws)
             await check_sec_plot_busy(ws)
-            await check_sec_activate(ws)
+            await check_sec_activate(ws, fake_ap)
             await check_dir_nearest(ws)
             await check_dir_set_invalid(ws)
             await check_dir_set_valid(ws)
         finally:
             await ws.close()
     finally:
+        status_task.cancel()
+        try:
+            await status_task
+        except asyncio.CancelledError:
+            pass
         await client.close()
 
 

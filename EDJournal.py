@@ -702,6 +702,8 @@ class EDJournal:
             # if end of file then break from while True
             if not line:
                 break
+            elif not line.strip():
+                continue    # tolerate blank lines (a torn write must not stall the reader)
             else:
                 log = loads(line)
                 cnt = cnt + 1

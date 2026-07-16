@@ -425,7 +425,9 @@ Phase 8.1 and is a stub for now — see §1 of the design doc.
 |---|---|---|
 | `sec.plot` | `profile: "fuel_safe"\|"fast"\|"ultra"`, `dest?: str`, `source?: str` | ack `{"type":"sec_plot_started"}` on the requesting socket, then (after the blocking Spansh round-trip runs in an executor) broadcast `{"type":"sec_route","data":<sec_route data>}` to all clients. Ordinary plotting failures (no destination, no loadout, unknown profile, HTTP/timeout errors) are captured inside `data.error`, not raised — the broadcast still fires. Only the busy-guard (`plot_secondary` called while a plot is already running) surfaces as `{"type":"error","text":"PLOT IN PROGRESS"}` instead of a broadcast. `source` (SEC FROM [E]) overrides the journal location as the plot origin; it is EDSM-validated, an unknown name lands in `data.error` as `unknown FROM system: ...`. |
 | `sec.get` | — | direct reply (not broadcast) `{"type":"sec_route","data":<sec_route data>}` — same payload shape as the `sec.plot` broadcast, for a client that just (re)connected. |
-| `sec.activate` | — | always `{"type":"error","text":"NOT AVAILABLE — требует ввода маршрута в игру (игровая часть 8.1)"}`. Stub until the in-game galaxy-map driving is implemented. |
+| `sec.activate` | — | adopts the plotted SEC route as the ACTIVE (executed) one: the RouteExecutor walks it against the journal location (fed by the 1 Hz status tick) and hands each segment endpoint (next `must_refuel` stop, then the destination) to the GalaxyMapDriver — a stub that only records the target until the in-game galaxy-map driving (game part of 8.1) replaces it. Success broadcasts `{"type":"exec_state","data":<exec_state>}`; failures (no plotted route, ULTRA profile) reply `{"type":"error","text":"..."}`. |
+| `exec.get` | — | direct reply `{"type":"exec_state","data":<exec_state>}` — current executor state for a (re)connecting client. |
+| `exec.stop` | — | deactivates the executor; broadcasts `exec_state` (status `INACTIVE`). |
 | `dir.nearest` | `scoopable: bool` | ack `{"type":"dir_started"}`, then broadcast `{"type":"dir_state","data":<planner snapshot>}` once the EDSM sphere-cascade lookup (executor) finishes. A failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}` instead. |
 | `dir.set` | `system: str` | no ack — runs `direct_to(system)` in an executor (blocking EDSM call), then broadcasts `{"type":"dir_state","data":<planner snapshot>}` on success. An unresolvable system name broadcasts `{"type":"error","text":"INVALID"}`; a hard failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}`. |
 
@@ -482,3 +484,28 @@ per-profile breakdown.
 ```json
 {"system": "...", "star_class": "...", "dist_ly": float|null, "scoopable": bool}
 ```
+
+### `exec_state` payload (`data`)
+
+`RouteExecutor.snapshot()`. When nothing was ever activated (or after
+`exec.stop`) it is just `{"active": false, "status": "INACTIVE"}`; otherwise:
+
+```json
+{"active": bool, "status": "ACTIVE"|"OFF ROUTE"|"COMPLETE",
+ "profile": "FUEL-SAFE"|"FAST", "destination": "...",
+ "idx": int, "jumps_total": int, "jumps_done": int,
+ "next_system": str|null, "segment_target": str|null, "map_target": str|null,
+ "remaining_jumps": int, "remaining_dist_ly": float, "next_refuel_in": int|null,
+ "fuel_plan": float|null, "fuel_actual": float|null, "off_route_at": str|null}
+```
+
+`idx` is the position (index into the activated route's `systems[]`);
+`segment_target` is the endpoint of the current segment (next `must_refuel`
+stop, else the destination) and `map_target` is what the GalaxyMapDriver was
+last asked to plot. `fuel_plan` is the route's expected `fuel_tank` at the
+current system, `fuel_actual` the journal's fuel level — the pair is the
+live plan-vs-reality fuel cross-check. `active` is true for
+`ACTIVE`/`OFF ROUTE` only. The server broadcasts `exec_state` on every
+change detected by the 1 Hz status tick (jump, off-route, rejoin,
+completion) plus on `sec.activate`/`exec.stop`; `tools/mock_flight.py`
+exercises the full cycle on the mock journal without the game.

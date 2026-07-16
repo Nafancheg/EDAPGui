@@ -49,6 +49,20 @@ def _get_route_planner(ed_ap):
     return _route_planner
 
 
+# Route executor (activated SEC route, Phase 8.1). Lazy like the planner; the
+# status tick only feeds it when it already exists (nothing to advance before
+# the first sec.activate).
+_route_executor = None
+
+
+def _get_route_executor(ed_ap):
+    global _route_executor
+    if _route_executor is None:
+        from RouteExecutor import RouteExecutor
+        _route_executor = RouteExecutor(ed_ap)
+    return _route_executor
+
+
 SCOOPABLE_CLASSES = {"K", "G", "B", "F", "O", "A", "M"}
 
 
@@ -200,11 +214,17 @@ class Broadcaster:
 
 
 async def _status_snapshot_loop(ed_ap, broadcaster: Broadcaster, interval: float = 1.0):
-    """Every `interval` seconds pull structured telemetry and broadcast it."""
+    """Every `interval` seconds pull structured telemetry and broadcast it.
+    The same tick feeds the route executor (when one is active): a location
+    change advances the executed route and broadcasts the new exec_state."""
     while True:
         try:
             data = ed_ap.get_status_dict()
             await broadcaster.broadcast({"type": "status_snapshot", "data": data})
+            if _route_executor is not None and _route_executor.tick(
+                    data.get("location"), data.get("fuel_level")):
+                await broadcaster.broadcast(
+                    {"type": "exec_state", "data": _route_executor.snapshot()})
         except Exception:
             log.exception("error building/broadcasting status_snapshot")
         await asyncio.sleep(interval)
@@ -432,11 +452,25 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
         planner = _get_route_planner(ed_ap)
         await ws.send_str(json.dumps({"type": "sec_route", "data": _sec_route_payload(ed_ap, planner)}))
     elif name == "sec.activate":
-        # Gated on the in-game part of Phase 8.1 (driving the galaxy map) --
-        # not in scope here, see design/route-planner-backend.md 1.
-        await ws.send_str(json.dumps({
-            "type": "error",
-            "text": "NOT AVAILABLE — требует ввода маршрута в игру (игровая часть 8.1)"}))
+        # Adopt the plotted SEC route as the ACTIVE (executed) one. The
+        # executor walks it against the journal location (fed by the status
+        # tick); the galaxy-map driver is a stub until the game part of 8.1.
+        from RouteExecutor import ExecuteError
+        planner = _get_route_planner(ed_ap)
+        executor = _get_route_executor(ed_ap)
+        try:
+            executor.activate(planner.snapshot().get("secondary"))
+        except ExecuteError as e:
+            await ws.send_str(json.dumps({"type": "error", "text": str(e)}))
+        else:
+            await broadcaster.broadcast({"type": "exec_state", "data": executor.snapshot()})
+    elif name == "exec.get":
+        executor = _get_route_executor(ed_ap)
+        await ws.send_str(json.dumps({"type": "exec_state", "data": executor.snapshot()}))
+    elif name == "exec.stop":
+        executor = _get_route_executor(ed_ap)
+        executor.deactivate()
+        await broadcaster.broadcast({"type": "exec_state", "data": executor.snapshot()})
     elif name == "dir.nearest":
         planner = _get_route_planner(ed_ap)
         loop = asyncio.get_running_loop()

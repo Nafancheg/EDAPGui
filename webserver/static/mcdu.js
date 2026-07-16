@@ -60,6 +60,7 @@
     secDest: '',              // local SEC DEST [E] input (SEC R1)
     secFrom: '',              // local SEC FROM [E] override (SEC L4); empty = journal location
     secBusy: false,           // true between sec_plot_started and the next sec_route
+    exec: null,               // last exec_state payload (activated-route executor)
     secListPage: 0,           // SECLIST scroll: top line index of the SECLIST_WIN window
     dir: null,                // last DirCandidate from dir_state (DIR page)
     dirPending: null,         // dir.set entry awaiting async validation (consumed on dir_state)
@@ -212,6 +213,18 @@
       case 'dir_started':
         flash('SEARCHING…', 1500);
         break;
+      case 'exec_state': {
+        var prevStatus = S.exec && S.exec.status;
+        S.exec = msg.data || null;
+        var st = S.exec && S.exec.status;
+        if (st && st !== prevStatus) {
+          if (st === 'ACTIVE' && prevStatus !== 'OFF ROUTE') flash('SEC ACTIVATED', 1800);
+          else if (st === 'OFF ROUTE') flash('OFF ROUTE', 1800);
+          else if (st === 'COMPLETE') flash('ROUTE COMPLETE', 2500);
+        }
+        if (S.page === 'SEC' || S.page === 'SECLIST' || S.page === 'PROG') render();
+        break;
+      }
       case 'dir_state':
         S.dir = (msg.data && msg.data.dir) || null;
         // a confirming dir_state consumes the scratch entry that produced it
@@ -1019,7 +1032,22 @@
                      input: secFromInput };
 
     var risk = secondary && secondary.risk;
-    fill(4, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
+    // L5 EXEC: state of the activated-route executor (contract exec_state).
+    // Shown once a route was ever activated; press stops/clears the executor.
+    var ex = S.exec;
+    if (ex && ex.status && ex.status !== 'INACTIVE') {
+      var exLabel = ex.status + (ex.jumps_total ? ' ' + ex.jumps_done + '/' + ex.jumps_total : '');
+      fill(4, {
+        lh: 'EXEC · ' + (ex.next_system ? 'NEXT ' + ex.next_system : (ex.destination || '')),
+        lv: '<' + exLabel,
+        lvs: ex.status === 'OFF ROUTE' ? 's-alert' : (ex.status === 'COMPLETE' ? 's-on' : 's-normal'),
+        rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted'
+      });
+      actions.L[4] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'exec.stop' }); },
+                       input: null };
+    } else {
+      fill(4, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
+    }
 
     if (secondary) {
       fill(5, { rv: 'NEXT PAGE>', rvs: 's-cyan' });
@@ -1161,10 +1189,15 @@
       var it = sys[gi];
       var dist = (gi === 0) ? 'ORIGIN'
         : (it.dist_ly === null || it.dist_ly === undefined ? '--' : Number(it.dist_ly).toFixed(1) + ' LY');
-      var name = (it.system || '?') + (it.neutron ? ' NTR' : '') + (it.must_refuel ? ' ·RFL' : '');
+      // ▶ marks the executor's current position when this very route is the
+      // activated one (same destination — a re-plot after activation unpins it)
+      var here = S.exec && S.exec.active && S.exec.idx === gi &&
+                 S.exec.destination === route.destination;
+      var name = (here ? '▶' : '') + (it.system || '?') +
+                 (it.neutron ? ' NTR' : '') + (it.must_refuel ? ' ·RFL' : '');
       fill(r, {
         lh: pad2(gi + 1), rh: dist,
-        lv: name, lvs: it.neutron ? 's-warn' : 's-normal',
+        lv: name, lvs: here ? 's-on' : (it.neutron ? 's-warn' : 's-normal'),
         rv: it.scoopable ? 'SCOOP' : '✗', rvs: it.scoopable ? 's-on' : 's-alert'
       });
     }
@@ -2146,7 +2179,7 @@
     }
     S.page = p;
     if (p === 'ROUTE' || p === 'INIT' || p === 'DATA' || p === 'SEC') { S.routeLoc = S.snap.location || null; sendRaw({ cmd: 'route.get' }); }
-    if (p === 'SEC') sendRaw({ cmd: 'sec.get' });
+    if (p === 'SEC') { sendRaw({ cmd: 'sec.get' }); sendRaw({ cmd: 'exec.get' }); }
     if (p === 'TUNING') S.curveNeedsLoad = true;
     if (p === 'CALIB') sendRaw({ cmd: 'calibration.get' });
     render();
