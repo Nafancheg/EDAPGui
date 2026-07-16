@@ -61,6 +61,7 @@
     secFrom: '',              // local SEC FROM [E] override (SEC L4); empty = journal location
     secBusy: false,           // true between sec_plot_started and the next sec_route
     exec: null,               // last exec_state payload (activated-route executor)
+    execStopConfirm: false,   // SEC L5 <STOP EXEC two-step confirm armed?
     secListPage: 0,           // SECLIST scroll: top line index of the SECLIST_WIN window
     dir: null,                // last DirCandidate from dir_state (DIR page)
     dirPending: null,         // dir.set entry awaiting async validation (consumed on dir_state)
@@ -982,6 +983,9 @@
     return n >= 100 ? String(Math.round(n)) : n.toFixed(1);
   }
 
+  // Layout per owner sketch (2026-07-16, spec remark 22): LEFT column = the
+  // actions top-down (PLOT/PLOT/ACTIVATE/RTE LIST/EXEC), RIGHT column = the
+  // data (DEST/FROM entry fields, then JUMPS/DIST/SCOOPS/RISK compare stack).
   function renderSEC() {
     setHeader('RTE PLAN', 'ROUTE PLANNER');
     clearActions();
@@ -993,67 +997,95 @@
     var busy = !!S.secBusy;
 
     var destVal = S.secDest || (S.route.active ? S.route.destination : '') || '________';
+    var fromVal = S.secFrom || (S.snap && S.snap.location) || '________';
+
+    // row 1 — PLOT FUEL-SAFE | SEC DEST. While a plot is running the label
+    // turns into an animated PLOTTING··· so the 10-30 s Spansh round-trip
+    // never looks frozen.
     fill(0, {
-      lh: secondary ? (secondary.profile + ' · PLOTTED') : '',
-      lv: '<PLOT FUEL-SAFE', lvs: busy ? 's-muted' : 's-normal',
+      lh: busy ? '' : (secondary ? (secondary.profile + ' · PLOTTED') : ''),
+      lv: busy ? 'PLOTTING···' : '<PLOT FUEL-SAFE',
+      lvs: busy ? 's-busy' : 's-normal',
       rh: 'SEC DEST', rv: destVal, rvs: 's-cyan'
     });
-    actions.L[0] = { press: function () { secPlotPress('fuel_safe'); },
-                     input: function (v) { return secPlotInput(v, 'fuel_safe'); } };
+    if (!busy) {
+      actions.L[0] = { press: function () { secPlotPress('fuel_safe'); },
+                       input: function (v) { return secPlotInput(v, 'fuel_safe'); } };
+    }
     actions.R[0] = { press: null, input: secDestInput };
 
+    // row 2 — PLOT FAST/RISKY | SEC FROM [E] (default: journal location;
+    // empty-scratchpad press reverts the override)
     fill(1, {
-      lv: '<PLOT FAST/RISKY', lvs: busy ? 's-muted' : 's-normal',
-      rh: 'JUMPS', rv: 'P ' + secCompareNum(primary.jumps) + ' / S ' + secCompareNum(secondary && secondary.jumps),
-      rvs: 's-normal'
+      lv: busy ? '' : '<PLOT FAST/RISKY', lvs: 's-normal',
+      rh: 'SEC FROM', rv: fromVal, rvs: S.secFrom ? 's-cyan' : 's-muted'
     });
-    actions.L[1] = { press: function () { secPlotPress('fast'); },
-                     input: function (v) { return secPlotInput(v, 'fast'); } };
+    if (!busy) {
+      actions.L[1] = { press: function () { secPlotPress('fast'); },
+                       input: function (v) { return secPlotInput(v, 'fast'); } };
+    }
+    actions.R[1] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
+                     input: secFromInput };
 
+    // row 3 — ACTIVATE (two-step) | JUMPS
     fill(2, {
       lv: S.secConfirm ? '<ACTIVATE SEC  CONFIRM?' : '<ACTIVATE SEC',
       lvs: S.secConfirm ? 's-alert' : (secondary ? 's-normal' : 's-muted'),
-      rh: 'DIST', rv: 'P ' + secDist(primary.dist_ly) + ' / S ' + secDist(secondary && secondary.dist_ly) + ' LY',
+      rh: 'JUMPS', rv: 'P ' + secCompareNum(primary.jumps) + ' / S ' + secCompareNum(secondary && secondary.jumps),
       rvs: 's-normal'
     });
     actions.L[2] = { press: secActivatePress, input: null };
 
+    // row 4 — RTE LIST (route pages) | DIST
+    fill(3, {
+      lv: secondary ? '<RTE LIST' : '', lvs: 's-cyan',
+      rh: 'DIST', rv: 'P ' + secDist(primary.dist_ly) + ' / S ' + secDist(secondary && secondary.dist_ly) + ' LY',
+      rvs: 's-normal'
+    });
+    if (secondary) actions.L[3] = { press: function () { setPage('SECLIST'); }, input: null };
+
+    // row 5 — EXEC status + two-step STOP | SCOOPS
     var pScoops = secCompareNum(primary.scoops);
     var sScoops = secCompareNum(secondary && secondary.scoops);
-    // L4 SEC FROM [E]: manual plot origin (default — current journal
-    // location); lets a route be planned "from anywhere" before flying there.
-    var fromVal = S.secFrom || (S.snap && S.snap.location) || '________';
-    fill(3, {
-      lh: 'SEC FROM', lv: fromVal, lvs: S.secFrom ? 's-cyan' : 's-muted',
-      rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal'
-    });
-    // empty-scratchpad press reverts the override to the journal location
-    actions.L[3] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
-                     input: secFromInput };
-
-    var risk = secondary && secondary.risk;
-    // L5 EXEC: state of the activated-route executor (contract exec_state).
-    // Shown once a route was ever activated; press stops/clears the executor.
     var ex = S.exec;
     if (ex && ex.status && ex.status !== 'INACTIVE') {
       var exLabel = ex.status + (ex.jumps_total ? ' ' + ex.jumps_done + '/' + ex.jumps_total : '');
       fill(4, {
-        lh: 'EXEC · ' + (ex.next_system ? 'NEXT ' + ex.next_system : (ex.destination || '')),
-        lv: '<' + exLabel,
-        lvs: ex.status === 'OFF ROUTE' ? 's-alert' : (ex.status === 'COMPLETE' ? 's-on' : 's-normal'),
-        rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted'
+        lh: 'EXEC ' + exLabel + (ex.next_system ? ' · NEXT ' + ex.next_system : ''),
+        lv: S.execStopConfirm ? '<STOP EXEC  CONFIRM?' : '<STOP EXEC',
+        lvs: S.execStopConfirm ? 's-alert'
+             : (ex.status === 'OFF ROUTE' ? 's-alert' : (ex.status === 'COMPLETE' ? 's-on' : 's-normal')),
+        rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal'
       });
-      actions.L[4] = { press: function () { if (ensureConn()) sendRaw({ cmd: 'exec.stop' }); },
-                       input: null };
+      actions.L[4] = { press: execStopPress, input: null };
     } else {
-      fill(4, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
+      fill(4, { rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal' });
     }
 
-    if (secondary) {
-      fill(5, { rv: 'NEXT PAGE>', rvs: 's-cyan' });
-      actions.R[5] = { press: function () { setPage('SECLIST'); }, input: null };
+    // row 6 — L6 stays empty (root page, spec §1.3) | RISK
+    var risk = secondary && secondary.risk;
+    fill(5, { rh: 'RISK', rv: risk || '---', rvs: risk ? (risk === 'HIGH' ? 's-warn' : 's-on') : 's-muted' });
+  }
+
+  // <STOP EXEC is destructive (kills the executed route) — same two-step
+  // CONFIRM? idiom as ACTIVATE, 5 s auto-reset.
+  var execStopConfirmT = null;
+  function execStopPress() {
+    if (S.execStopConfirm) {
+      if (execStopConfirmT) { clearTimeout(execStopConfirmT); execStopConfirmT = null; }
+      S.execStopConfirm = false;
+      if (ensureConn()) sendRaw({ cmd: 'exec.stop' });
+      render();
+      return;
     }
-    // L6 stays empty — SEC is a root page (spec §1.3: no RETURN).
+    S.execStopConfirm = true;
+    if (execStopConfirmT) clearTimeout(execStopConfirmT);
+    execStopConfirmT = setTimeout(function () {
+      execStopConfirmT = null;
+      S.execStopConfirm = false;
+      if (S.page === 'SEC') render();
+    }, 5000);
+    render();
   }
 
   // R1 SEC DEST [E]: local override for the plot destination; default (shown
