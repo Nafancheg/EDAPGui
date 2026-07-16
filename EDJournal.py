@@ -693,14 +693,6 @@ class EDJournal:
             self.open_journal(latest_log)
 
         # Check if file changed
-
-    def is_supercharged(self) -> bool:
-        """Returns True if FSD is currently supercharged (neutron star / white dwarf)."""
-        return self.ship.get('fsd_supercharged', False)
-
-    def get_supercharge_mult(self) -> float:
-        """Returns the current FSD supercharge multiplier (1.0 = normal, 4.0 = neutron)."""
-        return self.ship.get('supercharge_multiplier', 1.0)
         if self.get_file_modified_time() == self.last_mod_time:
             return self.ship
 
@@ -721,6 +713,14 @@ class EDJournal:
 
         self.last_mod_time = self.get_file_modified_time()
         return self.ship
+
+    def is_supercharged(self) -> bool:
+        """Returns True if FSD is currently supercharged (neutron star / white dwarf)."""
+        return self.ship.get('fsd_supercharged', False)
+
+    def get_supercharge_mult(self) -> float:
+        """Returns the current FSD supercharge multiplier (1.0 = normal, 4.0 = neutron)."""
+        return self.ship.get('supercharge_multiplier', 1.0)
 
 
 def write_construction(data, filename='./configs/construction.json'):
