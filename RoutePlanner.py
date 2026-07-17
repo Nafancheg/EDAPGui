@@ -57,8 +57,13 @@ FSD_CLASS_CONST: dict[int, int] = {1: 11, 2: 10, 3: 8, 4: 10, 5: 12}
 # Linear constant for the SCO (overcharge) drives.
 SCO_CLASS_CONST: dict[int, int] = {1: 8, 2: 12, 3: 12, 4: 12, 5: 13}
 
-# Linear constant for the SCO MkII overcharge-booster drive (only the size8/A one).
-SCO_MKII_CLASS_CONST: dict[int, int] = {5: 4}
+# The SCO MkII overcharge-booster drive (the single size8/A item) has its OWN
+# fuel-equation constants — NOT the size-8 table values. Source: the Spansh
+# exact-plotter website submission for the owner's explorer_nx SLEF build
+# (job 18743748…, 2026-07-17): fuel_power=2.5025, fuel_multiplier=0.011.
+# Cross-check: with these, ShipFSD max range = 78.38 LY vs EDSY's 78.41.
+SCO_MKII_CLASS_CONST: dict[int, int] = {5: 11}
+SCO_MKII_SIZE_CONST = 2.5025
 
 # Default neutron supercharge multiplier; the MkII booster drive overrides it.
 DEFAULT_SUPERCHARGE_MULTIPLIER = 4
@@ -201,6 +206,8 @@ def _resolve_fsd(loadout: dict) -> dict:
     if size not in FSD_SIZE_CONST:
         raise PlotError(f"unknown FSD size {size} for drive {item_id!r}")
     size_const = FSD_SIZE_CONST[size]
+    if "overcharge" in item_id and "mkii" in item_id:
+        size_const = SCO_MKII_SIZE_CONST   # MkII: own exponent, see table note
     class_const = _class_const_for(item_id, drive_class)
 
     # Engineering overrides (blueprints tweak optimal mass / max fuel per jump).
@@ -486,10 +493,23 @@ class SpanshClient:
                        supercharge: bool = False) -> dict:
         """Exact plotter with the full ship config. supercharge=True enables
         neutron/WD boosts (the FAST profile): fuel is still fully modelled, so
-        refuel stops stay known — unlike the range-only neutron plotter."""
+        refuel stops stay known — unlike the range-only neutron plotter.
+
+        The optimiser options mirror what the spansh.co.uk exact-plotter page
+        itself submits (owner's head-to-head comparison, 2026-07-17: 28 vs 21
+        jumps came from these knobs + the MkII constants): the "optimistic"
+        algorithm with a 60 s optimisation budget and greedy refuelling at
+        every scoopable stop. FAST additionally counts secondary stars as
+        scoop/neutron candidates (exclude_secondary=0) like the website does;
+        FUEL-SAFE keeps exclude_secondary=1 by design — the autopilot scoops
+        the ARRIVAL star, a scoopable secondary may be minutes away."""
         form = dict(ship_params)
+        form["algorithm"] = "optimistic"
+        form["max_time"] = 60
+        form["refuel_every_scoopable"] = 1
         if supercharge:
             form["use_supercharge"] = 1
+            form["exclude_secondary"] = 0
         form["source"] = source
         form["destination"] = dest
         job = self._submit(self.FUEL_SAFE_URL, form)
