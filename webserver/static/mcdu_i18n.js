@@ -71,7 +71,7 @@
     'OVERLAY': 'ОВЕРЛЕЙ', 'RANDOMNESS': 'РАНДОМИЗАЦИЯ', 'VOICE': 'ГОЛОС',
 
     // data labels (right column headers etc.)
-    'SEC DEST': 'ЦЕЛЬ SEC', 'SEC FROM': 'ОТКУДА',
+    'SEC DEST': 'ЦЕЛЬ SEC', 'SEC FROM': 'ОТКУДА', 'FROM': 'ОТКУДА',
     'JUMPS': 'ПРЫЖКИ', 'DIST': 'ДИСТ', 'SCOOPS': 'ЗАПРАВКИ', 'RISK': 'РИСК',
     'HIGH': 'ВЫСОКИЙ', 'LOW': 'НИЗКИЙ',
     'DEST': 'ЦЕЛЬ', 'FUEL': 'ТОПЛИВО', 'AVG/JUMP': 'СРЕДН/ПРЖ',

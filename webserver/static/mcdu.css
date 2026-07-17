@@ -161,15 +161,16 @@ body{
 
 .lhead,.rhead{
   color:var(--dim);
-  font-size:13px;
+  font-size:12px;
   letter-spacing:1px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .rhead{ text-align:right; }
 
 .lval,.rval{
-  /* 22px was tuned for the very condensed VT323; Ubuntu Mono is ~25% wider */
-  font-size:18px;
+  /* 22px was tuned for the very condensed VT323; Ubuntu Mono is ~25% wider
+     (18px first try; 16px after the owner's visual check, 2026-07-17) */
+  font-size:16px;
   line-height:1.05;
   color:var(--txt);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -216,7 +217,7 @@ body{
   outline:none;
   padding:0;
   font-family:var(--font-crt);
-  font-size:18px;
+  font-size:16px;
   letter-spacing:1px;
   color:var(--amber);
   text-shadow:0 0 7px var(--amber-glow);

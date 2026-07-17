@@ -1003,33 +1003,35 @@
     var destVal = S.secDest || (S.route.active ? S.route.destination : '') || '________';
     var fromVal = S.secFrom || (S.snap && S.snap.location) || '________';
 
-    // row 1 — PLOT FUEL-SAFE | SEC DEST. While a plot is running the label
-    // turns into an animated PLOTTING··· so the 10-30 s Spansh round-trip
-    // never looks frozen.
+    // row 1 — SEC FROM [E] (default: journal location; empty-scratchpad
+    // press reverts the override) | PLOT FUEL-SAFE. While a plot is running
+    // the right label turns into an animated PLOTTING··· so the 10-30 s
+    // Spansh round-trip never looks frozen.
     fill(0, {
-      lh: busy ? '' : (secondary ? (secondary.profile + ' · PLOTTED') : ''),
-      lv: busy ? 'PLOTTING···' : '<PLOT FUEL-SAFE',
-      lvs: busy ? 's-busy' : 's-normal',
-      rh: 'SEC DEST', rv: destVal, rvs: 's-cyan'
+      lh: 'FROM', lv: fromVal, lvs: S.secFrom ? 's-cyan' : 's-muted',
+      rh: busy ? '' : (secondary ? (secondary.profile + ' · PLOTTED') : ''),
+      rv: busy ? 'PLOTTING···' : 'PLOT FUEL-SAFE>',
+      rvs: busy ? 's-busy' : 's-normal'
     });
+    actions.L[0] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
+                     input: secFromInput };
     if (!busy) {
-      actions.L[0] = { press: function () { secPlotPress('fuel_safe'); },
+      actions.R[0] = { press: function () { secPlotPress('fuel_safe'); },
                        input: function (v) { return secPlotInput(v, 'fuel_safe'); } };
     }
-    actions.R[0] = { press: null, input: secDestInput };
 
-    // row 2 — PLOT FAST/RISKY | SEC FROM [E] (default: journal location;
-    // empty-scratchpad press reverts the override)
+    // row 2 — SEC DEST [E] (empty press reverts to the active F-PLN default)
+    // | PLOT FAST/RISKY
     fill(1, {
-      lv: busy ? '' : '<PLOT FAST/RISKY', lvs: 's-normal',
-      rh: 'SEC FROM', rv: fromVal, rvs: S.secFrom ? 's-cyan' : 's-muted'
+      lh: 'DEST', lv: destVal, lvs: 's-cyan',
+      rv: busy ? '' : 'PLOT FAST/RISKY>', rvs: 's-normal'
     });
+    actions.L[1] = { press: function () { if (S.secDest) { S.secDest = ''; render(); } },
+                     input: secDestInput };
     if (!busy) {
-      actions.L[1] = { press: function () { secPlotPress('fast'); },
+      actions.R[1] = { press: function () { secPlotPress('fast'); },
                        input: function (v) { return secPlotInput(v, 'fast'); } };
     }
-    actions.R[1] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
-                     input: secFromInput };
 
     // row 3 — ACTIVATE (two-step) | JUMPS
     fill(2, {
