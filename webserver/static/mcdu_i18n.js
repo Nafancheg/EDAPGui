@@ -129,7 +129,8 @@
     'CAL TARGET RUNNING': 'КАЛ ЦЕЛИ ИДЁТ',
     'COPIED': 'СКОПИРОВАНО', 'NOTHING TO COPY': 'НЕЧЕГО КОПИРОВАТЬ',
     'CLIPBOARD EMPTY': 'БУФЕР ПУСТ',
-    'USE CTRL+C': 'ЖМИ CTRL+C', 'USE CTRL+V': 'ЖМИ CTRL+V'
+    'COPY FROM HERE': 'СКОПИРУЙ ОТСЮДА (ДОЛГИЙ ТАП)',
+    'PASTE HERE': 'ВСТАВЬ СЮДА (ДОЛГИЙ ТАП)'
   };
 
   // ---- token pass for composed/dynamic strings (word boundaries, longest

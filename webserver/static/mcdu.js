@@ -408,8 +408,9 @@
   }
 
   // CPY / PST buttons: system clipboard <-> scratchpad. The Clipboard API
-  // needs a secure context (localhost is one; a LAN tablet is not — there
-  // the fallbacks are execCommand for copy and native Ctrl+V for paste).
+  // needs a secure context (localhost qualifies; a LAN tablet over http does
+  // not) — there the fallback is a prompt() dialog: its text field takes the
+  // native long-press Copy/Paste on any touch device, no keyboard needed.
   function copyScratch() {
     if (!S.scratch || S.flash) { flash('NOTHING TO COPY', 1200); return; }
     var txt = S.scratch;
@@ -417,10 +418,13 @@
       try {
         spInput.focus();
         spInput.select();
-        document.execCommand('copy');
+        if (!document.execCommand('copy')) throw new Error('denied');
         spInput.setSelectionRange(txt.length, txt.length);
         flash('COPIED', 1000);
-      } catch (e) { flash('USE CTRL+C', 1500); }
+      } catch (e) {
+        // last resort: long-press-copy out of a prompt dialog
+        window.prompt(t('COPY FROM HERE'), txt);
+      }
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(function () { flash('COPIED', 1000); }, legacy);
@@ -428,15 +432,21 @@
   }
 
   function pasteScratch() {
+    var apply = function (raw) {
+      var v = scratchFilter(raw);
+      if (!v) { flash('CLIPBOARD EMPTY', 1200); return; }
+      if (S.flash) clearFlashNow();
+      S.scratch = v;
+      renderScratch();
+    };
+    var dialog = function () {
+      // works everywhere: on a tablet — long-press the dialog field, Paste
+      var v = window.prompt(t('PASTE HERE'), '');
+      if (v !== null && v !== '') apply(v);
+    };
     if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function (t) {
-        t = scratchFilter(t);
-        if (!t) { flash('CLIPBOARD EMPTY', 1200); return; }
-        if (S.flash) clearFlashNow();
-        S.scratch = t;
-        renderScratch();
-      }, function () { flash('USE CTRL+V', 1500); });
-    } else flash('USE CTRL+V', 1500);
+      navigator.clipboard.readText().then(apply, dialog);
+    } else dialog();
   }
 
   function renderScratch() {
