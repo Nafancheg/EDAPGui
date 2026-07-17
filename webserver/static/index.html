@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/mcdu.css?v=10">
+<link rel="stylesheet" href="/static/mcdu.css?v=11">
 </head>
 <body>
 <div class="stage">
@@ -102,6 +102,8 @@
            (customer decision 2026-07-13, Замечание 19) -->
       <button type="button" class="fk airport" data-slew="clr" aria-label="clear scratchpad">CLR</button>
       <button type="button" class="fk kbdtoggle" id="kbdToggle" aria-label="toggle keypad">KBD</button>
+      <button type="button" class="fk clipbtn" id="cpyBtn" aria-label="copy scratchpad to clipboard">CPY</button>
+      <button type="button" class="fk clipbtn" id="pstBtn" aria-label="paste clipboard to scratchpad">PST</button>
       <button type="button" class="slew" data-slew="l" aria-label="slew left">&#8592;</button>
       <button type="button" class="slew" data-slew="u" aria-label="slew up">&#8593;</button>
       <button type="button" class="slew" data-slew="d" aria-label="slew down">&#8595;</button>
@@ -181,8 +183,8 @@
 
   </div>
 </div>
-<script src="/static/mcdu_i18n.js?v=2"></script>
+<script src="/static/mcdu_i18n.js?v=3"></script>
 <script src="/static/mcdu_curves.js?v=2"></script>
-<script src="/static/mcdu.js?v=22"></script>
+<script src="/static/mcdu.js?v=23"></script>
 </body>
 </html>

@@ -392,6 +392,53 @@
     if (clrHoldT) { clearTimeout(clrHoldT); clrHoldT = null; }
   }
 
+  // scratchpad charset (shared by typing, paste and field copy): ED system
+  // names allow apostrophe (Barnard's Star) and asterisk (Sagittarius A*)
+  function scratchFilter(v) {
+    return String(v || '').toUpperCase().replace(/[^A-Z0-9 ./+'*-]/g, '').slice(0, 22);
+  }
+
+  // empty-scratchpad LSK press on an entry field: copy its value out
+  function fieldToScratch(v) {
+    var t = scratchFilter(v);
+    if (!t || /^_+$/.test(t)) return;       // placeholder — nothing to copy
+    if (S.flash) clearFlashNow();
+    S.scratch = t;
+    renderScratch();
+  }
+
+  // CPY / PST buttons: system clipboard <-> scratchpad. The Clipboard API
+  // needs a secure context (localhost is one; a LAN tablet is not — there
+  // the fallbacks are execCommand for copy and native Ctrl+V for paste).
+  function copyScratch() {
+    if (!S.scratch || S.flash) { flash('NOTHING TO COPY', 1200); return; }
+    var txt = S.scratch;
+    var legacy = function () {
+      try {
+        spInput.focus();
+        spInput.select();
+        document.execCommand('copy');
+        spInput.setSelectionRange(txt.length, txt.length);
+        flash('COPIED', 1000);
+      } catch (e) { flash('USE CTRL+C', 1500); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () { flash('COPIED', 1000); }, legacy);
+    } else legacy();
+  }
+
+  function pasteScratch() {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function (t) {
+        t = scratchFilter(t);
+        if (!t) { flash('CLIPBOARD EMPTY', 1200); return; }
+        if (S.flash) clearFlashNow();
+        S.scratch = t;
+        renderScratch();
+      }, function () { flash('USE CTRL+V', 1500); });
+    } else flash('USE CTRL+V', 1500);
+  }
+
   function renderScratch() {
     if (S.flash) {
       spInput.value = S.flash;
@@ -418,7 +465,7 @@
     if (S.flash) { renderScratch(); return; }
     // charset covers ED system names too: apostrophe (Barnard's Star) and
     // asterisk (Sagittarius A*) are legal DIR / SEC DEST input
-    var v = spInput.value.toUpperCase().replace(/[^A-Z0-9 ./+'*-]/g, '').slice(0, 22);
+    var v = scratchFilter(spInput.value);
     if (spInput.value !== v) spInput.value = v;
     S.scratch = v;
   });
@@ -445,6 +492,19 @@
   // ---- LSK dispatch ----
   function doLSK(side, i) {
     var a = actions[side][i];
+    // MCDU CLR idiom: an armed CLR in the scratchpad (CLR button on empty
+    // scratchpad) clears the pressed field, if that field supports clearing
+    if (S.scratch === 'CLR') {
+      if (a && a.clear) {
+        a.clear();
+        S.scratch = '';
+        renderScratch();
+        render();
+      } else {
+        flash('NOT ALLOWED', 1500);
+      }
+      return;
+    }
     if (S.scratch !== '') {
       if (a && a.input) {
         var res = a.input(S.scratch);
@@ -1013,8 +1073,12 @@
       rv: busy ? 'PLOTTING···' : 'PLOT FUEL-SAFE>',
       rvs: busy ? 's-busy' : 's-normal'
     });
-    actions.L[0] = { press: function () { if (S.secFrom) { S.secFrom = ''; render(); } },
-                     input: secFromInput };
+    // empty press copies the field into the scratchpad (MCDU convention —
+    // from there it can be edited, CPY'd or dropped into another field);
+    // clearing the override = CLR button then this LSK
+    actions.L[0] = { press: function () { fieldToScratch(fromVal); },
+                     input: secFromInput,
+                     clear: function () { S.secFrom = ''; } };
     if (!busy) {
       actions.R[0] = { press: function () { secPlotPress('fuel_safe'); },
                        input: function (v) { return secPlotInput(v, 'fuel_safe'); } };
@@ -1026,8 +1090,9 @@
       lh: 'DEST', lv: destVal, lvs: 's-cyan',
       rv: busy ? '' : 'PLOT FAST/RISKY>', rvs: 's-normal'
     });
-    actions.L[1] = { press: function () { if (S.secDest) { S.secDest = ''; render(); } },
-                     input: secDestInput };
+    actions.L[1] = { press: function () { fieldToScratch(destVal); },
+                     input: secDestInput,
+                     clear: function () { S.secDest = ''; } };
     if (!busy) {
       actions.R[1] = { press: function () { secPlotPress('fast'); },
                        input: function (v) { return secPlotInput(v, 'fast'); } };
@@ -2299,12 +2364,20 @@
   document.querySelectorAll('[data-slew]').forEach(function (b) {
     b.addEventListener('click', function () {
       var d = b.getAttribute('data-slew');
-      if (d === 'clr') {           // ex-AIRPORT: dedicated scratchpad clear
-        S.scratch = '';
+      if (d === 'clr') {           // ex-AIRPORT: dedicated scratchpad clear;
+        if (S.flash) { clearFlashNow(); return; }
+        // on an EMPTY scratchpad it arms the field-clear idiom instead:
+        // the next LSK press clears that field (see doLSK)
+        S.scratch = S.scratch ? '' : 'CLR';
         renderScratch();
       } else slew(d);
     });
   });
+
+  var cpyBtn = document.getElementById('cpyBtn');
+  var pstBtn = document.getElementById('pstBtn');
+  if (cpyBtn) cpyBtn.addEventListener('click', copyScratch);
+  if (pstBtn) pstBtn.addEventListener('click', pasteScratch);
 
   // ---- on-screen keypad (KBD toggle in the slew row) ----
   // Keys write through spInput + an 'input' event so the same charset filter

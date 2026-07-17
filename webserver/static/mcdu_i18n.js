@@ -126,7 +126,10 @@
     'CURVE UPDATED': 'КРИВАЯ ОБНОВЛЕНА',
     'CALIB SAVED': 'КАЛИБ СОХР', 'CALIB RESET': 'КАЛИБ СБРОШЕНА',
     'CAL TARGET DONE': 'КАЛ ЦЕЛИ ГОТОВО', 'CAL TARGET FAILED': 'КАЛ ЦЕЛИ ОШИБКА',
-    'CAL TARGET RUNNING': 'КАЛ ЦЕЛИ ИДЁТ'
+    'CAL TARGET RUNNING': 'КАЛ ЦЕЛИ ИДЁТ',
+    'COPIED': 'СКОПИРОВАНО', 'NOTHING TO COPY': 'НЕЧЕГО КОПИРОВАТЬ',
+    'CLIPBOARD EMPTY': 'БУФЕР ПУСТ',
+    'USE CTRL+C': 'ЖМИ CTRL+C', 'USE CTRL+V': 'ЖМИ CTRL+V'
   };
 
   // ---- token pass for composed/dynamic strings (word boundaries, longest

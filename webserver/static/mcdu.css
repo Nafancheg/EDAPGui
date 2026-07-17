@@ -368,6 +368,7 @@ body{
 .kbd-wide{ grid-column:span 6; }
 .kbd-bs{ grid-column:span 2; font-size:15px; }
 .kbdtoggle{ flex:0 0 auto; padding:0 14px; }
+.clipbtn{ flex:0 0 auto; padding:0 12px; }
 
 /* ---- STOP ALL: guarded emergency button (outside the LSK grid) ----
    Same height as a slew key, function-key width, far right of the slew row.
