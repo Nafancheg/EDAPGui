@@ -239,10 +239,12 @@ def _resolve_fsd(loadout: dict) -> dict:
     }
 
 
-def ship_plot_params(loadout: dict) -> dict:
+def ship_plot_params(loadout: dict, cargo: float = 0.0) -> dict:
     """Build the Spansh galaxy-plotter (generic/route) form params for a ship.
 
-    See design/route-planner-backend.md 2.2. Raises PlotError when the loadout
+    `cargo` is the LIVE cargo tonnage (Status.json) — mass changes range and
+    fuel burn, so a loaded ship must not be plotted as empty. See
+    design/route-planner-backend.md 2.2. Raises PlotError when the loadout
     has no FSD or is missing required fields.
     """
     r = _resolve_fsd(loadout)
@@ -258,7 +260,7 @@ def ship_plot_params(loadout: dict) -> dict:
         "internal_tank_size": r["internal_tank_size"],
         "max_fuel_per_jump": r["max_fuel"],
         "range_boost": r["range_boost"],
-        "cargo": 0,
+        "cargo": round(float(cargo or 0.0), 2),
         "is_supercharged": 0,
         "use_supercharge": 0,
         "use_injections": 0,
@@ -613,6 +615,15 @@ class RoutePlanner:
             raise PlotError("no ship loadout available for a fuel-safe route")
         return loadout
 
+    def _live_cargo(self) -> float:
+        """Current cargo tonnage from Status.json (0.0 when unavailable) —
+        mass matters: a loaded ship must not be plotted as empty."""
+        try:
+            data = self.ap.status.get_cleaned_data()
+            return float(data.get("Cargo") or 0.0)
+        except Exception:  # noqa: BLE001 — no status on a bare fake core
+            return 0.0
+
     # --- blocking operations ---------------------------------------------- #
 
     def plot_secondary(self, dest: str | None = None, profile: str = "fuel_safe",
@@ -664,9 +675,11 @@ class RoutePlanner:
             # config (guardian booster, SCO MkII x6, engineering) is respected
             # AND fuel is modelled, so the route is executable segment-wise.
             return self._spansh.plot_fuel_safe(
-                source, dest, ship_plot_params(self._loadout()), supercharge=True)
+                source, dest, ship_plot_params(self._loadout(), self._live_cargo()),
+                supercharge=True)
         if key in ("fuel_safe", "fuelsafe"):
-            return self._spansh.plot_fuel_safe(source, dest, ship_plot_params(self._loadout()))
+            return self._spansh.plot_fuel_safe(
+                source, dest, ship_plot_params(self._loadout(), self._live_cargo()))
         if key == "ultra":
             # range-only neutron plotter: no fuel model, but handles the very
             # long hauls (Colonia-class) much faster than the exact plotter.
