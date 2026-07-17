@@ -130,7 +130,9 @@
     'COPIED': 'СКОПИРОВАНО', 'NOTHING TO COPY': 'НЕЧЕГО КОПИРОВАТЬ',
     'CLIPBOARD EMPTY': 'БУФЕР ПУСТ',
     'COPY FROM HERE': 'СКОПИРУЙ ОТСЮДА (ДОЛГИЙ ТАП)',
-    'PASTE HERE': 'ВСТАВЬ СЮДА (ДОЛГИЙ ТАП)'
+    'PASTE HERE': 'ВСТАВЬ СЮДА (ДОЛГИЙ ТАП)',
+    'SHIP CHANGED — REPLOT': 'КОРАБЛЬ ИЗМЕНЁН — ПЕРЕСТРОЙ',
+    'SHIP CHANGED SINCE PLOT — REPLOT': 'КОРАБЛЬ ИЗМЕНЁН — ПЕРЕСТРОЙ МАРШРУТ'
   };
 
   // ---- token pass for composed/dynamic strings (word boundaries, longest

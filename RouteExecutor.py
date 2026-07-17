@@ -84,6 +84,7 @@ class RouteExecutor:
         self._status = INACTIVE
         self._off_route_at: str | None = None
         self._last_fuel: float | None = None
+        self._ship_mismatch = False      # loadout changed while the route is active
 
     # --- helpers ------------------------------------------------------------ #
 
@@ -114,6 +115,19 @@ class RouteExecutor:
             return None
         return state.get("location") if isinstance(state, dict) else None
 
+    def _journal_fingerprint(self) -> str | None:
+        """Fingerprint of the CURRENT ship from the journal (None when no
+        loadout is available — a bare fake core, or pre-Loadout startup)."""
+        try:
+            state = self.ap.jn.ship_state()
+            loadout = state.get("loadout_raw") if isinstance(state, dict) else None
+            if not loadout:
+                return None
+            from RoutePlanner import ship_fingerprint
+            return ship_fingerprint(loadout)
+        except Exception:  # noqa: BLE001
+            return None
+
     # --- commands ------------------------------------------------------------ #
 
     def activate(self, route: dict | None) -> None:
@@ -129,6 +143,14 @@ class RouteExecutor:
         if len(systems) < 2:
             raise ExecuteError("ROUTE HAS NO LEGS")
 
+        # the plan is only as good as the ship it was computed for: refuse to
+        # fly a route whose ship has changed since plotting (outfitting,
+        # ship swap, engineering — anything jump-physics-relevant)
+        plan_fp = (route.get("ship") or {}).get("fingerprint")
+        cur_fp = self._journal_fingerprint()
+        if plan_fp and cur_fp and plan_fp != cur_fp:
+            raise ExecuteError("SHIP CHANGED SINCE PLOT — REPLOT")
+
         with self._lock:
             self._route = route
             location = self._journal_location()
@@ -136,6 +158,7 @@ class RouteExecutor:
             self._idx = idx if idx is not None else 0
             self._status = ACTIVE
             self._off_route_at = None
+            self._ship_mismatch = False
             target = (systems[self._idx + 1].get("system")
                       if self._idx + 1 < len(systems) else None)
         if target:
@@ -150,6 +173,7 @@ class RouteExecutor:
             self._idx = 0
             self._status = INACTIVE
             self._off_route_at = None
+            self._ship_mismatch = False
 
     # --- 1 Hz tick ------------------------------------------------------------ #
 
@@ -157,11 +181,23 @@ class RouteExecutor:
         """Advance against the latest journal location. Returns True when the
         public snapshot changed (caller broadcasts it). Any target lock is
         issued OUTSIDE the state lock — the real driver does slow key work."""
+        # quick unlocked pre-check so an idle executor costs nothing per tick
+        if self._status not in (ACTIVE, OFF_ROUTE) or not location:
+            return False
+        # ship-profile watch (journal read — kept outside the state lock):
+        # a mid-flight loadout change invalidates the plan's fuel/range math
+        cur_fp = self._journal_fingerprint()
         retarget = None
         changed = False
         with self._lock:
-            if self._status not in (ACTIVE, OFF_ROUTE) or not location:
+            if self._status not in (ACTIVE, OFF_ROUTE):
                 return False
+            plan_fp = ((self._route or {}).get("ship") or {}).get("fingerprint")
+            if plan_fp and cur_fp and (plan_fp != cur_fp) != self._ship_mismatch:
+                self._ship_mismatch = plan_fp != cur_fp
+                changed = True
+                logger.warning("ship profile %s the plotted route",
+                               "DIVERGED from" if self._ship_mismatch else "matches again")
             self._last_fuel = fuel_level
             systems = self._systems()
 
@@ -231,4 +267,6 @@ class RouteExecutor:
                 "fuel_plan": here.get("fuel_tank"),
                 "fuel_actual": self._last_fuel,
                 "off_route_at": self._off_route_at,
+                "ship": self._route.get("ship"),
+                "ship_mismatch": self._ship_mismatch,
             }

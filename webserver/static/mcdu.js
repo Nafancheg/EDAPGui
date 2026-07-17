@@ -194,6 +194,7 @@
           S.curveNeedsLoad = false;
         }
         if (S.page === 'DIR' && msg.text === 'INVALID') flash('INVALID', 1500);
+        if (S.page === 'SEC' && msg.text) flash(shortenMsg(msg.text), 2200);
         S.dirPending = null;   // rejected/failed dir.set: leave the entry for correction
         appendLog('[error] ' + (msg.text || ''), false, true);
         break;
@@ -216,7 +217,9 @@
         break;
       case 'exec_state': {
         var prevStatus = S.exec && S.exec.status;
+        var prevMism = !!(S.exec && S.exec.ship_mismatch);
         S.exec = msg.data || null;
+        if (S.exec && S.exec.ship_mismatch && !prevMism) flash('SHIP CHANGED — REPLOT', 2500);
         var st = S.exec && S.exec.status;
         if (st && st !== prevStatus) {
           if (st === 'ACTIVE' && prevStatus !== 'OFF ROUTE') flash('SEC ACTIVATED', 1800);
@@ -1077,9 +1080,13 @@
     // press reverts the override) | PLOT FUEL-SAFE. While a plot is running
     // the right label turns into an animated PLOTTING··· so the 10-30 s
     // Spansh round-trip never looks frozen.
+    // the plotted header carries the ship the plan was computed FOR — the
+    // pilot must be able to verify the profile at a glance (owner req.)
+    var planShip = secondary && secondary.ship && secondary.ship.name;
     fill(0, {
       lh: 'FROM', lv: fromVal, lvs: S.secFrom ? 's-cyan' : 's-muted',
-      rh: busy ? '' : (secondary ? (secondary.profile + ' · PLOTTED') : ''),
+      rh: busy ? '' : (secondary
+        ? (secondary.profile + (planShip ? ' · ' + planShip : '') + ' · PLOTTED') : ''),
       rv: busy ? 'PLOTTING···' : 'PLOT FUEL-SAFE>',
       rvs: busy ? 's-busy' : 's-normal'
     });
@@ -1132,9 +1139,10 @@
     if (ex && ex.status && ex.status !== 'INACTIVE') {
       var exLabel = ex.status + (ex.jumps_total ? ' ' + ex.jumps_done + '/' + ex.jumps_total : '');
       fill(4, {
-        lh: 'EXEC ' + exLabel + (ex.next_system ? ' · NEXT ' + ex.next_system : ''),
+        lh: ex.ship_mismatch ? 'SHIP CHANGED — REPLOT'
+            : 'EXEC ' + exLabel + (ex.next_system ? ' · NEXT ' + ex.next_system : ''),
         lv: S.execStopConfirm ? '<STOP EXEC  CONFIRM?' : '<STOP EXEC',
-        lvs: S.execStopConfirm ? 's-alert'
+        lvs: (S.execStopConfirm || ex.ship_mismatch) ? 's-alert'
              : (ex.status === 'OFF ROUTE' ? 's-alert' : (ex.status === 'COMPLETE' ? 's-on' : 's-normal')),
         rh: 'SCOOPS', rv: 'P ' + pScoops + ' / S ' + sScoops, rvs: 's-normal'
       });

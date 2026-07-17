@@ -463,10 +463,19 @@ against):
 {"profile": "FUEL-SAFE"|"FAST"|"ULTRA", "source": "...", "destination": "...",
  "jumps": int, "dist_ly": float, "scoops": int|null, "risk": "LOW"|"HIGH",
  "plotted_at": "<iso>",
+ "ship": {"name": "...", "fingerprint": "<10-hex>", "max_range": float,
+          "supercharge_multiplier": float, "range_boost": float, "tank": float},
  "systems": [{"system": "...", "dist_ly": float|null, "scoopable": bool|null,
               "neutron": bool, "must_refuel": bool,
               "fuel_used": float|null, "fuel_tank": float|null}, ...]}
 ```
+
+`ship` is the plan's SHIP PASSPORT (exact-plotter profiles only): the
+loadout the route was computed for — `fingerprint` hashes everything
+jump-physics-relevant (hull, FSD + engineering, booster, tanks). The
+executor refuses `sec.activate` when the current journal loadout's
+fingerprint differs (`error: SHIP CHANGED SINCE PLOT — REPLOT`) and flags a
+mid-flight change as `exec_state.ship_mismatch: true`.
 
 `systems[0]` is the starting system (`dist_ly`/`fuel_used` null). FUEL-SAFE
 and FAST both come from the Spansh exact plotter with the full ship config

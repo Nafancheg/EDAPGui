@@ -29,6 +29,8 @@ with a fake session that returns canned responses.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import threading
 import time
 from datetime import datetime, timezone
@@ -327,6 +329,51 @@ class ShipFSD:
             d_eff *= base / (base + self.range_boost)
         mass = self.mass(fuel, cargo)
         return (self.class_const / 1000.0) * (d_eff * mass / self.optimal_mass) ** self.size_const
+
+
+def ship_fingerprint(loadout: dict) -> str:
+    """Stable fingerprint of everything jump-physics-relevant in a loadout.
+
+    A route remembers the fingerprint it was plotted for; the executor
+    refuses to fly a plan whose ship has since changed (outfitting, another
+    ship, engineering) and flags a mid-flight change. Only fields that alter
+    range/fuel take part — cosmetic module changes don't invalidate a plan.
+    """
+    fsd_item = ""
+    fsd_mods = []
+    booster = ""
+    for module in (loadout or {}).get("Modules") or []:
+        item = (module.get("Item") or "").lower()
+        if item in FSD_BASE:
+            fsd_item = item
+            for mod in (module.get("Engineering") or {}).get("Modifiers", []) or []:
+                if mod.get("Label") in ("FSDOptimalMass", "MaxFuelPerJump"):
+                    fsd_mods.append((mod["Label"], mod.get("Value")))
+        elif item in GUARDIAN_BOOSTER_RANGE:
+            booster = item
+    key = json.dumps({
+        "ship": (loadout or {}).get("Ship"),
+        "unladen": (loadout or {}).get("UnladenMass"),
+        "fuel": (loadout or {}).get("FuelCapacity"),
+        "fsd": fsd_item,
+        "mods": sorted(fsd_mods),
+        "booster": booster,
+    }, sort_keys=True)
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+
+
+def ship_summary(loadout: dict) -> dict:
+    """The plan's ship passport: fingerprint + the human-checkable numbers
+    (shown in the MCDU so the pilot can be 100% sure what the plan assumes)."""
+    fsd = ShipFSD(loadout)
+    return {
+        "name": (loadout or {}).get("Ship") or "?",
+        "fingerprint": ship_fingerprint(loadout),
+        "max_range": round(fsd.jump_range(fsd.max_fuel), 2),
+        "supercharge_multiplier": fsd.supercharge_multiplier,
+        "range_boost": fsd.range_boost,
+        "tank": fsd.tank_size,
+    }
 
 
 def max_range_from_loadout(loadout: dict) -> float:
@@ -674,12 +721,18 @@ class RoutePlanner:
             # FAST = exact plotter with neutron/WD supercharge: the full ship
             # config (guardian booster, SCO MkII x6, engineering) is respected
             # AND fuel is modelled, so the route is executable segment-wise.
-            return self._spansh.plot_fuel_safe(
-                source, dest, ship_plot_params(self._loadout(), self._live_cargo()),
+            loadout = self._loadout()
+            route = self._spansh.plot_fuel_safe(
+                source, dest, ship_plot_params(loadout, self._live_cargo()),
                 supercharge=True)
+            route["ship"] = ship_summary(loadout)
+            return route
         if key in ("fuel_safe", "fuelsafe"):
-            return self._spansh.plot_fuel_safe(
-                source, dest, ship_plot_params(self._loadout(), self._live_cargo()))
+            loadout = self._loadout()
+            route = self._spansh.plot_fuel_safe(
+                source, dest, ship_plot_params(loadout, self._live_cargo()))
+            route["ship"] = ship_summary(loadout)
+            return route
         if key == "ultra":
             # range-only neutron plotter: no fuel model, but handles the very
             # long hauls (Colonia-class) much faster than the exact plotter.

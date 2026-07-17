@@ -33,16 +33,23 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 class FakeJournal:
-    def __init__(self, location):
+    def __init__(self, location, loadout=None):
         self.location = location
+        self.loadout = loadout
 
     def ship_state(self):
-        return {"location": self.location}
+        return {"location": self.location, "loadout_raw": self.loadout}
 
 
 class FakeAP:
-    def __init__(self, location="Sol"):
-        self.jn = FakeJournal(location)
+    def __init__(self, location="Sol", loadout=None):
+        self.jn = FakeJournal(location, loadout)
+
+
+def loadout(ship="krait_mkii", unladen=320.4):
+    return {"event": "Loadout", "Ship": ship, "UnladenMass": unladen,
+            "FuelCapacity": {"Main": 32.0, "Reserve": 0.63},
+            "Modules": [{"Item": "int_hyperdrive_size5_class5"}]}
 
 
 def sysentry(name, dist=30.0, refuel=False, neutron=False, fuel_tank=None):
@@ -157,6 +164,47 @@ def main() -> int:
     # --- deactivate ------------------------------------------------------------------ #
     ex.deactivate()
     check("deactivate -> INACTIVE snapshot", ex.snapshot() == {"active": False, "status": "INACTIVE"})
+
+    # --- ship-profile guard (fingerprint) --------------------------------------------- #
+    from RoutePlanner import ship_fingerprint, ship_summary
+    lo_a = loadout()
+    lo_b = loadout(unladen=999.0)      # outfitting change -> different physics
+    check("fingerprint: stable for identical loadouts",
+          ship_fingerprint(loadout()) == ship_fingerprint(lo_a))
+    check("fingerprint: differs when mass changes",
+          ship_fingerprint(lo_a) != ship_fingerprint(lo_b))
+
+    route_a = dict(ROUTE)
+    route_a["ship"] = ship_summary(lo_a)
+    # (a) activation refused when the current ship differs from the plan's
+    ex2 = RouteExecutor(FakeAP("Sol", loadout=lo_b), map_driver=GalaxyMapDriver())
+    try:
+        ex2.activate(dict(route_a))
+        check("activate: refuses a plan for another ship", False, "no exception")
+    except ExecuteError as e:
+        check("activate: refuses a plan for another ship", "SHIP CHANGED" in str(e), str(e))
+
+    # (b) activation ok on the matching ship; a mid-flight loadout change is
+    # flagged by the tick and cleared when the loadout reverts
+    ap = FakeAP("Sol", loadout=lo_a)
+    ex3 = RouteExecutor(ap, map_driver=GalaxyMapDriver())
+    ex3.activate(dict(route_a))
+    check("activate: matching ship accepted", ex3.snapshot()["status"] == "ACTIVE"
+          and ex3.snapshot()["ship_mismatch"] is False
+          and ex3.snapshot()["ship"]["name"] == "krait_mkii")
+    ap.jn.loadout = lo_b
+    changed = ex3.tick("Alpha", 30.0)
+    s = ex3.snapshot()
+    check("tick: mid-flight loadout change -> ship_mismatch flagged",
+          changed and s["ship_mismatch"] is True, str(s))
+    ap.jn.loadout = lo_a
+    ex3.tick("Beta", 28.0)
+    check("tick: loadout reverted -> mismatch cleared",
+          ex3.snapshot()["ship_mismatch"] is False)
+    # legacy routes without a ship passport still activate (no fp to compare)
+    ex4 = RouteExecutor(FakeAP("Sol", loadout=lo_b), map_driver=GalaxyMapDriver())
+    ex4.activate(dict(ROUTE))
+    check("activate: passport-less route still flies", ex4.snapshot()["status"] == "ACTIVE")
 
     total = len(_results)
     passed = sum(1 for ok, _ in _results if ok)
