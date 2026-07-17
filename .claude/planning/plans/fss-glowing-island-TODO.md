@@ -6,7 +6,10 @@
 
 ---
 
-## Состояние (2026-07-11)
+## Состояние (2026-07-16)
+
+- ✅ **Механика маршрутов проверена (2026-07-16)** → ченджлог: ShipFSD (единая физика: точный бустер, ×4/×6), стенд `tools/route_mechanics_bench.py` (наша формула vs Spansh vs EDSM ≤0.64%), FAST→exact-plotter+supercharge (заправки известны), SEC FROM [E], `fuel_used`/`fuel_tank` в маршруте. Попутно: 🐞 jetcone-коммит `0a1e265` разрезал `EDJournal.ship_state()` — починено `e889d20`.
+- ✅ **Поэтапное исполнение СДЕЛАНО (2026-07-16, `d08ca32`)** → ченджлог: RouteExecutor (посегментно, OFF ROUTE/rejoin/COMPLETE, fuel план-vs-журнал), живой `sec.activate` + `exec.*`, EXEC-строка в MCDU, мок-полёт `tools/mock_flight.py` (E2E на headless: FUEL-SAFE 7/7, FAST 5/5 c девиацией). Ноутбучная часть 8.1 исчерпана — остался игровой GalaxyMapDriver.
 
 - ✅ **Фазы 0–2 завершены** (подготовка; расчистка периферии; ED_AP.py 4574→1527 строк, лётная логика в `services/`) → ченджлог.
 - ✅ **Фаза 7.0–7.2 завершены** (capture-харнесс; EDMesg удалён; `docs/web_api_contract.md`; headless aiohttp-сервер `webserver/` + `edap_headless.py`) → ченджлог.
@@ -90,6 +93,7 @@
 
 - [ ] 🔵 [DELEGATE→Explore] Собрать точные сигнатуры источников топлива: `EDJournal.ship_state()` (`fuel_level`/`fuel_capacity`/`fuel_percent`), поля `Fuel.FuelMain`/`FuelReservoir` в `StatusParser`, флаг `FlagsLowFuel`. Вернуть таблицу «поле → тип → откуда → частота обновления».
 - [ ] 🟣 [INLINE] **`FuelState.py`** (отдельный файл, не часть fuel_service): сбор всех источников, статус достоверности `OK/STALE/DISAGREE/UNKNOWN`, правило голосования fail-safe (НЕ молчаливый `=10`, ср. `EDJournal.py:481-484`), учёт `FuelReservoir`.
+- [ ] 🟣 [INLINE] **Самокалибровка физики FSD по факту полёта** (урок MkII-инцидента 2026-07-17, ченджлог: константы привода в наших таблицах могут устаревать, а сверка max-range их НЕ ловит — кривая расхода расходится при одинаковом максимуме): каждый реальный `FSDJump` даёт `JumpDist`+`FuelUsed` → сравнивать с `ShipFSD.fuel_cost()` для того же лега; скользящее отклонение в MCDU (DATA/FUEL PRED), при >2–3% — предупреждение «константы привода под вопросом». Данные уже в журнале (`fuel_used_hist` есть, добавить дистанции).
 - [ ] 🟣 [INLINE] Route budget: расширить уже подключённый `self.nav_route` (`ED_AP.py:196`; закомм. дубль `:3723` удалить). Прогноз «хватит ли на N прыжков»; пред-прыжковая проверка через `FuelState`+бюджет перед `mnvr_to_target`/`jump`.
 - [ ] 🟣 [INLINE] Адаптивное завершение дозаправки в `fuel_service`: отслеживать скорость роста `fuel_percent`/`FuelMain`, стоп при ~0 на N проверок; `FuelScoopTimeOut` — крайний предохранитель.
 - [ ] 🟣 [INLINE] Проверка в игре: маршрут с незаправляемыми звёздами подряд — предупреждение/стоп заблаговременно.
@@ -140,7 +144,9 @@
 > ✅ **Бэкенд-часть СДЕЛАНА (2026-07-13, коммиты `dc65ab0`+`e3a6ce6`) → ченджлог.** Дизайн-док: `design/route-planner-backend.md` (нормативный). Итого: `RoutePlanner.py` (Spansh neutron=FAST / galaxy=FUEL-SAFE / EDSM=DIR), WS-команды `sec.*`/`dir.*`, контракт в `docs/web_api_contract.md` §7, QA `tools/qa_route_planner.py` (15/15) + `tools/qa_route_ws.py` (8/8). ⚠️ EDSM требует кастомный User-Agent (403 на `python-requests`).
 
 - [x] 🔵 Фронт ✅ (2026-07-13, по запросу заказчика «хочу видеть в MCDU»): SEC F-PLN §3.4 / DIR §3.5 подключены к `sec.*`/`dir.*` + страница SEC LIST (формат F-PLN) + demo-сервер получил FakeJournal (реальный планнер на fake-ядре). Проверено живьём в браузере через реальные Spansh/EDSM. Замечание 18 в спеке. Попутные фиксы: scratchpad-charset `'`/`*`, потребление ввода на успешном dir_state.
-- [ ] 🟣 ⛔игра: Автоматизация ввода маршрута в игру: драйв галакарты (ввод системы + Plot Route) ЛИБО пошаговый выбор следующей цели в нав-панели → настоящий `sec.activate` и исполнение DIR. Живая проверка RTE PLAN/DIR-страниц с планшета. Стратегия ввода: посегментная (до следующей заправки, игра прокладывает между) как основная, по-waypoint'ная как fallback — решить по замерам.
+- [x] 🟣 Механика подтверждена ✅ (2026-07-16) → ченджлог: ShipFSD (точный бустер `d/mult·R/(R+boost)`, ×4/×6), стенд `tools/route_mechanics_bench.py` (≤0.64% vs Spansh, 4 конфигурации вкл. MkII×6), FAST→exact-plotter+`use_supercharge=1` (заправки известны ⇒ исполним посегментно; нейтрон-плоттер = скрытый профиль `ultra`), SEC FROM [E] (Замечание 19), `fuel_used`/`fuel_tank` в `Route.systems[]`.
+- [x] 🟣 Поэтапное исполнение ✅ (2026-07-16, `d08ca32`) → ченджлог: `RouteExecutor.py` (посегментно: конец сегмента = следующая заправка → GalaxyMapDriver-стаб; OFF ROUTE/rejoin/COMPLETE; fuel план-vs-журнал), `sec.activate` живой + `exec.get`/`exec.stop` + `exec_state`, EXEC-строка SEC L5 + ▶ в RTE LIST (Замечание 20), мок-полёт `tools/mock_flight.py` (E2E: FUEL-SAFE 7/7 и FAST 5/5 с девиацией на headless). QA: qa_route_executor 25/25, qa_route_ws 14/14. Попутно: EDJournal терпит пустые строки журнала. **Авто-ре-плот при сходе НЕ делался** (сейчас OFF ROUTE = индикация; решить на игре: авто `sec.plot` от текущей позиции или ручной).
+- [ ] 🟣 ⛔игра: **Реальный GalaxyMapDriver = target lock, НЕ Plot Route** (решение заказчика 2026-07-16, Замечание 21: игровой плоттер не умеет ×4/×6): найти систему (галакарта-поиск или нав-панель) и **залочить целью** — интерфейс `RouteExecutor.GalaxyMapDriver.set_target(system) -> bool`; исполнитель зовёт его после каждого прыжка со следующим вейпоинтом. Референс кода: ядро выпиленного `EDGalaxyMap.py` (`git show f2ae525^:EDGalaxyMap.py`, метод `set_gal_map_destination_text_odyssey` — без шага Plot). Плюс исполнение DIR, живая проверка RTE PLAN/DIR с планшета, решение по авто-ре-плоту при OFF ROUTE.
 - [ ] 🟣 ⛔игра: **Замер «наш плоттер vs игровой» (критерий приёмки 8.1, требование заказчика 2026-07-13):** одна пара систем, 4 прогона — игровой fastest / игровой economical / наш FUEL-SAFE / наш FAST(neutron) — метрики: прыжки, время полёта, заправки, топливные инциденты; плюс замер посегментной стратегии. Измеритель — `tools/route_validity_check.py`. Известное априори: игра не планирует через нейтронки (×4 дальность) и ограничена 20k LY.
 
 ### 8.2 — Режимы посадки на планету (фаза LND)
