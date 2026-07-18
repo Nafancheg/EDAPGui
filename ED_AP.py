@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import threading
 import traceback
 import urllib.parse
@@ -351,6 +352,11 @@ class EDAutopilot:
             "HotKey_StartSC": "ins",  # to determine other keynames, make sure these keys are not used in ED bindings
             "HotKey_StopAllAssists": "end",
             "EnableRandomness": False,  # add some additional random sleep times to avoid AP detection (0-3sec at specific locations)
+            "ExecMapTargetLock": True,  # executed SEC route: auto target-lock the next plan system in the galaxy map after each jump
+            "ExecMapTargetDelay": 3.0,  # seconds to wait after the jump settles before the map driver grabs the keyboard
+            "ExecMapTargetUseMouse": True,  # click the static «Задать цель» button (clean target lock) instead of plotting a 1-jump route
+            "ExecMapTargetBtnPct": [0.952, 0.613],  # centre of the «Задать цель» PIN icon (right-edge toolbar, SECOND button — the yellow one above it is «Проложить маршрут») as screen fractions, measured on the owner's full 2543x1439 screenshot; calibrate if UI scale differs
+            "RoutePlanFuelMarginT": 1.0,  # tons withheld from the plannable tank when plotting (cruise/reserve burn Spansh does not model)
             "ActivateEliteEachKey": False,  # Activate Elite window before each key or group of keys
             "OverlayTextEnable": False,  # Experimental at this stage
             "OverlayTextYOffset": 400,  # offset down the screen to start place overlay text
@@ -364,6 +370,7 @@ class EDAutopilot:
             "VoiceEnable": False,
             "VoiceID": 1,  # my Windows only have 3 defined (0-2)
             "ElwScannerEnable": False,
+            "DSSScanEnable": True,  # auto discovery-scan (honk) on arrival during FSD assist; off = arrive silently (FSS toggle is ElwScannerEnable)
             "LogDEBUG": False,  # enable for debug messages (per-frame key sends, compass reads — very noisy)
             "LogINFO": True,
             "Enable_CV_View": 0,  # Should CV View be enabled by default
@@ -681,6 +688,18 @@ class EDAutopilot:
         # and total range, plus a normal/warning/critical/unknown status enum.
         fuel_level = ship['fuel_level']
         fuel_capacity = ship['fuel_capacity']
+        # The journal only writes FuelLevel on discrete events (FSDJump,
+        # RefuelAll, LoadGame...), so between jumps the number goes stale.
+        # Status.json carries the live tank state — prefer it when present.
+        # The existence check matters: get_cleaned_data() retries forever on
+        # a missing file (game not running) and would hang the status tick.
+        try:
+            if os.path.isfile(self.status.file_path):
+                live_fuel = (self.status.get_cleaned_data() or {}).get('FuelMain')
+                if live_fuel is not None:
+                    fuel_level = round(float(live_fuel), 2)
+        except Exception:
+            pass
         hist = ship.get('fuel_used_hist') or []
         avg_fuel = round(sum(hist) / len(hist), 2) if hist else None
         jumps_to_refuel = None
@@ -690,6 +709,10 @@ class EDAutopilot:
             jumps_to_refuel = max(0, int((fuel_level - threshold_tons) / avg_fuel))
             range_jumps = max(0, int(fuel_level / avg_fuel))
         fuel_percent = ship['fuel_percent']
+        if fuel_level is not None and fuel_capacity:
+            # recompute from the (possibly live) level instead of the
+            # journal-event snapshot percent
+            fuel_percent = round(fuel_level / fuel_capacity * 100)
         if fuel_percent is None:
             fuel_status = "unknown"
         elif fuel_percent < 10 or jumps_to_refuel == 0:

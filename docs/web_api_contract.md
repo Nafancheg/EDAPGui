@@ -425,7 +425,7 @@ Phase 8.1 and is a stub for now — see §1 of the design doc.
 |---|---|---|
 | `sec.plot` | `profile: "fuel_safe"\|"fast"\|"ultra"`, `dest?: str`, `source?: str` | ack `{"type":"sec_plot_started"}` on the requesting socket, then (after the blocking Spansh round-trip runs in an executor) broadcast `{"type":"sec_route","data":<sec_route data>}` to all clients. Ordinary plotting failures (no destination, no loadout, unknown profile, HTTP/timeout errors) are captured inside `data.error`, not raised — the broadcast still fires. Only the busy-guard (`plot_secondary` called while a plot is already running) surfaces as `{"type":"error","text":"PLOT IN PROGRESS"}` instead of a broadcast. `source` (SEC FROM [E]) overrides the journal location as the plot origin; it is EDSM-validated, an unknown name lands in `data.error` as `unknown FROM system: ...`. |
 | `sec.get` | — | direct reply (not broadcast) `{"type":"sec_route","data":<sec_route data>}` — same payload shape as the `sec.plot` broadcast, for a client that just (re)connected. |
-| `sec.activate` | — | adopts the plotted SEC route as the ACTIVE (executed) one: the RouteExecutor walks it against the journal location (fed by the 1 Hz status tick) per-WAYPOINT — after every jump the NEXT system of OUR plan is handed to the GalaxyMapDriver as a target lock (`set_target`), never as an in-game "plot route" (the game plotter cannot plan supercharged x4/x6 legs). The driver is a stub recording the target until the in-game key driver (game part of 8.1) replaces it. Success broadcasts `{"type":"exec_state","data":<exec_state>}`; failures (no plotted route, ULTRA profile) reply `{"type":"error","text":"..."}`. |
+| `sec.activate` | — | adopts the plotted SEC route as the ACTIVE (executed) one: the RouteExecutor walks it against the journal location (fed by the 1 Hz status tick) per-WAYPOINT — after every jump the NEXT system of OUR plan is handed to the GalaxyMapDriver as a target lock (`set_target`), never as an in-game "plot route" (the game plotter cannot plan supercharged x4/x6 legs). The driver is `GameGalaxyMapDriver` (`GalaxyMapDriver.py`) when the core has live keys (headless launch): a background worker opens the galaxy map, types the system into search and long-press-selects to plot the single-jump leg, confirming against the journal's FSDTarget (ap_ckb log `MAP TARGET OK/FAILED`); config `ExecMapTargetLock: false` reverts it to record-only, and cores without keys keep the recording stub. Success broadcasts `{"type":"exec_state","data":<exec_state>}`; failures (no plotted route, ULTRA profile) reply `{"type":"error","text":"..."}`. |
 | `exec.get` | — | direct reply `{"type":"exec_state","data":<exec_state>}` — current executor state for a (re)connecting client. |
 | `exec.stop` | — | deactivates the executor; broadcasts `exec_state` (status `INACTIVE`). |
 | `dir.nearest` | `scoopable: bool` | ack `{"type":"dir_started"}`, then broadcast `{"type":"dir_state","data":<planner snapshot>}` once the EDSM sphere-cascade lookup (executor) finishes. A failure (e.g. unknown current location) broadcasts `{"type":"error","text":"..."}` instead. |
@@ -519,3 +519,20 @@ live plan-vs-reality fuel cross-check. `active` is true for
 change detected by the 1 Hz status tick (jump, off-route, rejoin,
 completion) plus on `sec.activate`/`exec.stop`; `tools/mock_flight.py`
 exercises the full cycle on the mock journal without the game.
+
+---
+
+## 8. Host clipboard (PC CLIP)
+
+The browser Clipboard API only reaches the clipboard of the device the page
+runs on, so the tablet's CPY/PST buttons cannot see text copied on the PC
+(e.g. a system name from Inara/Spansh in the desktop browser). The PC CLIP
+button in the slew row bridges that gap through the server:
+
+| Command | Params | Response / broadcast |
+|---|---|---|
+| `clip.get` | — | direct reply (never broadcast — a clipboard is not shared state) `{"type":"clip_text","text":str}` with the HOST PC's clipboard text. `text` is `""` when the clipboard is empty, holds no text, is transiently locked by another app, or the server host is not Windows. The client runs the text through the same scratchpad charset filter as local typing/paste and flashes `PC CLIP EMPTY` when nothing usable remains. |
+
+Server side is `_read_host_clipboard()` in `webserver/server.py`: raw Win32
+via ctypes (`OpenClipboard`/`GetClipboardData(CF_UNICODETEXT)`), no new
+dependency, executed off the event loop; any failure degrades to `""`.

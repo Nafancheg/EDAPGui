@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDAP · План теста MCDU</title>
+<style>
+  :root{
+    --bg:#eff0ec; --panel:#ffffff; --ink:#20262b; --muted:#6b7480;
+    --line:#d6d9d2; --accent:#a5721c; --accent2:#1e7f96; --ok:#2e8b57;
+    --bad:#b0483c; --code-bg:#f2f0e8; --chip-bg:#eceee9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0d1114; --panel:#14191e; --ink:#e6e2d8; --muted:#8a94a0;
+      --line:#2a323b; --accent:#e2a23c; --accent2:#62c8dc; --ok:#4fae6e;
+      --bad:#d0574a; --code-bg:#0a0e11; --chip-bg:#1b2127;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1114; --panel:#14191e; --ink:#e6e2d8; --muted:#8a94a0;
+    --line:#2a323b; --accent:#e2a23c; --accent2:#62c8dc; --ok:#4fae6e;
+    --bad:#d0574a; --code-bg:#0a0e11; --chip-bg:#1b2127;
+  }
+  :root[data-theme="light"]{
+    --bg:#eff0ec; --panel:#ffffff; --ink:#20262b; --muted:#6b7480;
+    --line:#d6d9d2; --accent:#a5721c; --accent2:#1e7f96; --ok:#2e8b57;
+    --bad:#b0483c; --code-bg:#f2f0e8; --chip-bg:#eceee9;
+  }
+
+  html{background:var(--bg);}
+  body{
+    margin:0; padding:0 16px 64px; background:var(--bg); color:var(--ink);
+    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap{max-width:800px; margin:0 auto;}
+  .mono{font-family:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;}
+
+  /* ---- top bar ---- */
+  header.top{
+    position:sticky; top:0; z-index:5; background:var(--bg);
+    padding:14px 0 10px; border-bottom:1px solid var(--line); margin-bottom:22px;
+  }
+  .eyebrow{
+    font-family:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+    font-size:11px; letter-spacing:.14em; color:var(--accent2);
+    text-transform:uppercase; margin:0 0 4px;
+  }
+  .toprow{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+  h1{
+    font-family:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+    font-size:20px; margin:0; letter-spacing:.02em; text-wrap:balance;
+  }
+  .total{
+    margin-left:auto; font-family:ui-monospace,Consolas,monospace;
+    font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .total .tok{color:var(--ok); font-weight:600;}
+  .total .tbad{color:var(--bad); font-weight:600;}
+  .pbar{
+    display:flex; height:5px; background:var(--chip-bg); border-radius:2.5px;
+    margin-top:10px; overflow:hidden;
+  }
+  .pbar .pok{height:100%; width:0; background:var(--ok); transition:width .25s;}
+  .pbar .pbad{height:100%; width:0; background:var(--bad); transition:width .25s;}
+
+  .intro{color:var(--muted); font-size:14.5px; margin:0 0 26px; max-width:66ch;}
+  .intro b{color:var(--ink);}
+
+  /* ---- blocks ---- */
+  section.block{
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    margin-bottom:18px; overflow:hidden;
+  }
+  .bhead{
+    display:flex; align-items:baseline; gap:10px; padding:12px 16px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .bno{
+    font-family:ui-monospace,Consolas,monospace; font-size:12px;
+    color:var(--accent); letter-spacing:.08em; white-space:nowrap;
+  }
+  .bttl{font-weight:600; font-size:15.5px;}
+  .bcnt{
+    margin-left:auto; font-family:ui-monospace,Consolas,monospace;
+    font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .bcnt .bok{color:var(--ok); font-weight:600;}
+  .bcnt .bbad{color:var(--bad); font-weight:600;}
+  .bnote{padding:2px 16px 10px; color:var(--muted); font-size:13.5px;}
+
+  /* ---- items ---- */
+  ul.items{list-style:none; margin:0; padding:6px 8px 10px;}
+  li.item{margin:0 0 2px; border-radius:6px; padding:2px 0;}
+  li.item.is-bad{background:color-mix(in srgb, var(--bad) 7%, transparent); }
+  .row{display:flex; align-items:flex-start; gap:11px; padding:6px 8px;}
+  .itxt{flex:1; font-size:15px; padding-top:2px;}
+  .itxt code{
+    font-family:ui-monospace,Consolas,monospace; font-size:13px;
+    background:var(--code-bg); border:1px solid var(--line);
+    border-radius:4px; padding:1px 5px; white-space:nowrap;
+  }
+  li.item.is-ok .itxt{color:var(--muted);}
+
+  /* page tag: which MCDU key/page this test lives on */
+  .pg{
+    display:inline-block; font-family:ui-monospace,Consolas,monospace;
+    font-size:11px; letter-spacing:.08em; color:var(--accent2);
+    border:1px solid var(--accent2); border-radius:4px;
+    padding:1px 7px; margin:0 8px 2px 0; vertical-align:1px; white-space:nowrap;
+  }
+  /* expected result line */
+  .see{display:block; color:var(--muted); font-size:13.5px; margin-top:3px;}
+  .see::before{content:"должно быть: "; color:var(--accent); font-family:ui-monospace,Consolas,monospace; font-size:11px; letter-spacing:.06em;}
+  li.item.is-ok .see{color:var(--muted);}
+
+  .btns{display:flex; gap:6px; flex:0 0 auto;}
+  button.st{
+    font-family:ui-monospace,Consolas,monospace; font-size:11px; letter-spacing:.08em;
+    border:1.5px solid var(--line); background:transparent; color:var(--muted);
+    border-radius:5px; padding:5px 10px; cursor:pointer; white-space:nowrap;
+  }
+  button.st:hover{border-color:var(--muted);}
+  button.st:focus-visible{outline:2px solid var(--accent2); outline-offset:2px;}
+  li.item.is-ok button.st.ok{background:var(--ok); border-color:var(--ok); color:#fff;}
+  li.item.is-bad button.st.bad{background:var(--bad); border-color:var(--bad); color:#fff;}
+
+  textarea.fail{
+    display:block; width:calc(100% - 32px); box-sizing:border-box;
+    margin:2px 8px 8px 24px; min-height:56px; resize:vertical;
+    background:var(--code-bg); color:var(--ink);
+    border:1px solid var(--bad); border-radius:6px; padding:8px 10px;
+    font:13.5px/1.5 ui-monospace,Consolas,monospace;
+  }
+  textarea.fail:focus-visible{outline:2px solid var(--bad); outline-offset:1px;}
+
+  /* command block */
+  pre.cmd{
+    margin:2px 8px 8px 24px; padding:10px 12px; background:var(--code-bg);
+    border:1px solid var(--line); border-radius:6px; overflow-x:auto;
+    font-family:ui-monospace,Consolas,monospace; font-size:13px; line-height:1.5;
+  }
+
+  /* footer */
+  .foot{display:flex; align-items:center; gap:12px; margin-top:26px; flex-wrap:wrap;}
+  .foot .hint{color:var(--muted); font-size:13px; max-width:46ch;}
+  .foot button{
+    background:none; border:1px solid var(--line); border-radius:6px; padding:8px 14px;
+    font:12.5px ui-monospace,Consolas,monospace; letter-spacing:.06em; cursor:pointer;
+  }
+  button.report{border-color:var(--accent2); color:var(--accent2);}
+  button.report:hover{background:var(--accent2); color:var(--bg);}
+  button.reset{margin-left:auto; color:var(--muted);}
+  button.reset:hover{border-color:var(--bad); color:var(--bad);}
+  .foot button:focus-visible{outline:2px solid var(--accent2); outline-offset:2px;}
+
+  @media (prefers-reduced-motion: reduce){ .pbar .pok,.pbar .pbad{transition:none;} }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">EDAP · Нормальные процедуры · без автопилота</p>
+    <div class="toprow">
+      <h1>ПЛАН ПРОВЕРКИ WEB-MCDU</h1>
+      <span class="total" id="totalCnt"></span>
+    </div>
+    <div class="pbar"><span class="pok" id="pOk"></span><span class="pbad" id="pBad"></span></div>
+  </header>
+
+  <p class="intro">Один пункт = одна страница MCDU и одна проверка. Синяя метка — какую
+  <b>клавишу прибора</b> нажать, дальше — что сделать, серым — что должно появиться.
+  Рулите вручную, автопилот не включаем. При «НЕ ОК» пишите в поле, что увидели вместо
+  ожидаемого. В конце — <b>«СКОПИРОВАТЬ ОТЧЁТ»</b>.</p>
+
+  <section class="block" data-block="ПОДГОТОВКА">
+    <div class="bhead"><span class="bno">ПОДГОТОВКА</span><span class="bttl">Запуск</span><span class="bcnt"></span></div>
+    <ul class="items">
+      <li class="item" data-id="p1"><div class="row"><span class="itxt"><span class="pg">ИГРА</span>Запустить Elite, сесть в корабль (не в главном меню)<span class="see">вы в кокпите. Что журнал пишется, увидите в пункте INIT ниже: SHIP и FUEL заполнены — значит читается</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="p2"><div class="row"><span class="itxt"><span class="pg">СЕРВЕР</span>Запустить командой ниже, открыть в браузере <code>http://127.0.0.1:8090</code> (планшет: <code>--host 0.0.0.0</code> + разрешить порт 8090 в брандмауэре)<span class="see">открылся прибор MCDU, в шапке нет надписи OFFLINE</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div>
+        <pre class="cmd">cd "c:\Users\nafan\Documents\ED Autopilot\EDAPGui"
+.venv\Scripts\python.exe edap_headless.py --log-level debug</pre>
+      </li>
+      <li class="item" data-id="p3"><div class="row"><span class="itxt"><span class="pg">MCDU MENU</span>Зайти в OPTIONS, проверить строку HOTKEYS<span class="see">HOTKEYS ВЫКЛ (чтобы автопилот не запустился случайной клавишей); кнопки FSD/SC не трогаем весь тест</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <section class="block" data-block="БЛОК 1">
+    <div class="bhead"><span class="bno">БЛОК 1</span><span class="bttl">Телеметрия — по одной странице</span><span class="bcnt"></span></div>
+    <ul class="items">
+      <li class="item" data-id="t1"><div class="row"><span class="itxt"><span class="pg">PROG</span>Открывается при загрузке. Стрелками ←/→ долистать до фазы CRUISE (активная подсвечена сама)<span class="see">справа: ПРЫЖКИ n/m, ЦЕЛЬ, ТОПЛИВО % — числа совпадают с игрой</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t2"><div class="row"><span class="itxt"><span class="pg">INIT</span>Нажать клавишу INIT, просто посмотреть правую колонку<span class="see">DEST (или NO ROUTE, если маршрут не проложен), JUMPS, SHIP — ваш корабль, FUEL %, LINK — CONNECTED</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t3"><div class="row"><span class="itxt"><span class="pg">DATA</span>Нажать клавишу DATA<span class="see">SYSTEM — система, где вы сейчас; STAR — класс звезды и SCOOP/✗. До первого прыжка за сессию STAR может быть «---» — класс звезды приходит из журнала после прыжка, это норма</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t4"><div class="row"><span class="itxt"><span class="pg">PROG</span>В игре открыть галкарту и выбрать любую систему целью (без прокладки маршрута)<span class="see">строка ЦЕЛЬ на PROG сменилась на выбранную систему за ~1–2 с</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t5"><div class="row"><span class="itxt"><span class="pg">PROG</span>Прыгнуть в выбранную систему вручную<span class="see">на PROG (фаза CRUISE): счётчик прыжков +1, ДИСТ выросла; на DATA поле SYSTEM сменилось на новую систему и STAR заполнился</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t6"><div class="row"><span class="itxt"><span class="pg">FUEL PRED</span>Нажать клавишу FUEL PRED (после 2–3 прыжков)<span class="see">FUEL % и тонны упали после прыжка; появились СРЕДН/ПРЫЖОК и ДО ЗАПРАВКИ N; при скупе у звезды уровень растёт; лампочка на клавише соответствует состоянию</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="t7"><div class="row"><span class="itxt"><span class="pg">ЛОГ</span>Панель под экраном прибора<span class="see">строки событий появляются по ходу полёта. Лог живёт в странице: после перезагрузки страницы (F5) он пустой — это норма, не баг</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <section class="block" data-block="БЛОК 2">
+    <div class="bhead"><span class="bno">БЛОК 2</span><span class="bttl">F-PLN — маршрут, проложенный в игре</span><span class="bcnt"></span></div>
+    <ul class="items">
+      <li class="item" data-id="f1"><div class="row"><span class="itxt"><span class="pg">F-PLN</span>В игре проложить маршрут по галкарте (несколько прыжков), нажать клавишу F-PLN<span class="see">список систем с классами звёзд и LY; текущая помечена; внизу DEST и TOTAL N JMP; стрелки ↑/↓ мотают список</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="f2"><div class="row"><span class="itxt"><span class="pg">F-PLN</span>Прыгнуть на один прыжок по этому маршруту<span class="see">отметка текущей системы сдвинулась на следующую строку</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="f3"><div class="row"><span class="itxt"><span class="pg">F-PLN</span>Отменить маршрут в галкарте<span class="see">вместо списка — НЕТ АКТИВНОГО МАРШРУТА / ПРОЛОЖИ В ГАЛАКАРТЕ</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <section class="block" data-block="БЛОК 3">
+    <div class="bhead"><span class="bno">БЛОК 3</span><span class="bttl">RTE PLAN — наш построитель (Spansh, нужен интернет)</span><span class="bcnt"></span></div>
+    <ul class="items">
+      <li class="item" data-id="r1"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Проложить в игре маршрут (для подстановки), нажать клавишу RTE PLAN<span class="see">поле DEST уже заполнено конечной системой игрового маршрута</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="r2"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Нажать LSK у PLOT FUEL-SAFE<span class="see">мигает ПОСТРОЕНИЕ··· 10–30 с, затем заполняются JUMPS P/S и DIST P/S; в заголовке плана — имя ВАШЕГО корабля</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="r3"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Нажать LSK у RTE LIST<span class="see">список систем плана листается; заправочные остановки помечены (RFL/SCOOP); L6 RETURN возвращает</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="r4"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Нажать LSK у PLOT FAST/RISKY<span class="see">маршрут перестроился, RISK — HIGH (нейтронные плечи)</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="r5"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Набрать в скретчпаде мусор (например <code>KLDSFJH99</code>), нажать LSK у DEST, затем PLOT<span class="see">внятная ошибка (INVALID / unknown system), прибор не завис</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <section class="block" data-block="БЛОК 4">
+    <div class="bhead"><span class="bno">БЛОК 4</span><span class="bttl">Исполнение построенного маршрута — рулите сами</span><span class="bcnt"></span></div>
+    <div class="bnote">Для этого блока постройте короткий FUEL-SAFE маршрут на 3–5 прыжков.
+    Теперь после каждого прыжка прибор САМ откроет галкарту, наберёт следующую систему в поиске
+    и проложит к ней метку (1 прыжок) — в этот момент уберите руки с клавиатуры и мыши.
+    Прыгаете по метке вы, вручную. Если метка не встала — в логе будет MAP TARGET FAILED, ставьте руками.</div>
+    <ul class="items">
+      <li class="item" data-id="e1"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Нажать ACTIVATE SEC, затем ещё раз (появится ТОЧНО?)<span class="see">флэш SEC АКТИВИРОВАН; статус ACTIVE n/m; прибор сам открыл галкарту, набрал первую систему плана и поставил метку (в логе MAP TARGET OK), карта закрылась</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="e2"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Прыгнуть по выставленной метке. Повторить пару раз<span class="see">после каждого прыжка: счётчик n/m +1, NEXT сменился, ▶ в RTE LIST сдвинулся, и прибор сам перевыставил метку на следующую систему (MAP TARGET OK в логе)</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="e3"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Прыгнуть в систему НЕ из плана, потом вернуться на маршрут<span class="see">флэш ВНЕ МАРШРУТА и статус OFF ROUTE; после возврата — снова ACTIVE</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="e4"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Долететь до конечной системы плана<span class="see">флэш МАРШРУТ ЗАВЕРШЁН, статус COMPLETE</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="e5"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>Построить и активировать ещё раз, затем STOP EXEC дважды (с подтверждением)<span class="see">исполнение остановилось, статус INACTIVE; одиночное нажатие БЕЗ подтверждения ничего не сносит</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="e6"><div class="row"><span class="itxt"><span class="pg">RTE PLAN</span>(Если есть второй корабль) пересесть при активном маршруте<span class="see">предупреждение КОРАБЛЬ ИЗМЕНЁН — ПЕРЕСТРОЙ</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <section class="block" data-block="БЛОК 5">
+    <div class="bhead"><span class="bno">БЛОК 5</span><span class="bttl">DIR и PC CLIP</span><span class="bcnt"></span></div>
+    <ul class="items">
+      <li class="item" data-id="d1"><div class="row"><span class="itxt"><span class="pg">DIR</span>Нажать клавишу DIR, затем LSK у NEAREST SCOOPABLE<span class="see">флэш ПОИСК…, затем карточка кандидата: система, класс звезды, LY</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="d2"><div class="row"><span class="itxt"><span class="pg">PC CLIP</span>На ПК скопировать имя системы (Ctrl+C на Inara/Spansh), на приборе нажать кнопку PC (рядом с CPY/PST)<span class="see">имя появилось в скретчпаде; дальше LSK у DEST на RTE PLAN — и можно строить</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+      <li class="item" data-id="d3"><div class="row"><span class="itxt"><span class="pg">PC CLIP</span>Скопировать на ПК картинку (не текст), нажать PC<span class="see">флэш БУФЕР ПК ПУСТ, ничего не зависло</span></span><span class="btns"><button type="button" class="st ok">ОК</button><button type="button" class="st bad">НЕ ОК</button></span></div></li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    <button class="report" id="reportBtn" type="button">СКОПИРОВАТЬ ОТЧЁТ</button>
+    <p class="hint">Отчёт соберёт все «НЕ ОК» с комментариями — вставьте его в чат.
+    К сбоям приложите <span class="mono">logs/autopilot.log</span> и скрин MCDU.</p>
+    <button class="reset" id="resetBtn" type="button">СБРОСИТЬ ВСЁ</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var KEY = 'edap-test-plan-v3';
+  var state = { items: {} };
+  try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  var items = Array.prototype.slice.call(document.querySelectorAll('li.item[data-id]'));
+
+  function ensureFailBox(li, id) {
+    var ta = li.querySelector('textarea.fail');
+    if (!ta) {
+      ta = document.createElement('textarea');
+      ta.className = 'fail';
+      ta.placeholder = 'что увидели вместо ожидаемого…';
+      ta.addEventListener('input', function () {
+        state.items[id] = state.items[id] || {};
+        state.items[id].txt = ta.value;
+        save();
+      });
+      li.appendChild(ta);
+    }
+    return ta;
+  }
+
+  function applyItem(li) {
+    var id = li.dataset.id;
+    var it = state.items[id] || {};
+    li.classList.toggle('is-ok', it.st === 'ok');
+    li.classList.toggle('is-bad', it.st === 'bad');
+    var ta = li.querySelector('textarea.fail');
+    if (it.st === 'bad') {
+      ta = ensureFailBox(li, id);
+      ta.hidden = false;
+      if (typeof it.txt === 'string' && ta.value !== it.txt) ta.value = it.txt;
+    } else if (ta) {
+      ta.hidden = true;
+    }
+  }
+
+  function refresh() {
+    var total = items.length, ok = 0, bad = 0;
+    document.querySelectorAll('section.block').forEach(function (sec) {
+      var lis = sec.querySelectorAll('li.item[data-id]');
+      var bok = 0, bbad = 0;
+      lis.forEach(function (li) {
+        var st = (state.items[li.dataset.id] || {}).st;
+        if (st === 'ok') bok++;
+        else if (st === 'bad') bbad++;
+      });
+      ok += bok; bad += bbad;
+      var parts = ['<span class="bok">' + bok + '✓</span>'];
+      if (bbad) parts.push('<span class="bbad">' + bbad + '✗</span>');
+      parts.push((bok + bbad) + ' / ' + lis.length);
+      sec.querySelector('.bcnt').innerHTML = parts.join(' · ');
+    });
+    document.getElementById('totalCnt').innerHTML =
+      '<span class="tok">' + ok + ' ОК</span> · <span class="tbad">' + bad + ' НЕ ОК</span> · ' +
+      (ok + bad) + ' / ' + total;
+    document.getElementById('pOk').style.width = (total ? 100 * ok / total : 0) + '%';
+    document.getElementById('pBad').style.width = (total ? 100 * bad / total : 0) + '%';
+  }
+
+  items.forEach(function (li) {
+    var id = li.dataset.id;
+    li.querySelector('button.st.ok').addEventListener('click', function () {
+      var it = state.items[id] = state.items[id] || {};
+      it.st = (it.st === 'ok') ? null : 'ok';
+      save(); applyItem(li); refresh();
+    });
+    li.querySelector('button.st.bad').addEventListener('click', function () {
+      var it = state.items[id] = state.items[id] || {};
+      it.st = (it.st === 'bad') ? null : 'bad';
+      save(); applyItem(li); refresh();
+      if (it.st === 'bad') ensureFailBox(li, id).focus();
+    });
+    applyItem(li);
+  });
+
+  // ---- report: all НЕ ОК items with comments, ready to paste into chat ----
+  function buildReport() {
+    var lines = ['EDAP тест web-MCDU — отчёт ' + new Date().toLocaleString()];
+    var total = items.length, ok = 0, bad = 0, open = 0;
+    items.forEach(function (li) {
+      var st = (state.items[li.dataset.id] || {}).st;
+      if (st === 'ok') ok++; else if (st === 'bad') bad++; else open++;
+    });
+    lines.push('ОК: ' + ok + ' · НЕ ОК: ' + bad + ' · не проверено: ' + open + ' (всего ' + total + ')');
+    document.querySelectorAll('section.block').forEach(function (sec) {
+      var bads = [];
+      sec.querySelectorAll('li.item[data-id]').forEach(function (li) {
+        var it = state.items[li.dataset.id] || {};
+        if (it.st !== 'bad') return;
+        var pg = li.querySelector('.pg');
+        var full = li.querySelector('.itxt').textContent.replace(/\s+/g, ' ').trim();
+        var see = li.querySelector('.see');
+        var expect = see ? see.textContent.replace(/\s+/g, ' ').trim() : '';
+        if (expect && full.indexOf(expect) >= 0) full = full.slice(0, full.indexOf(expect)).trim();
+        if (pg && full.indexOf(pg.textContent) === 0) full = full.slice(pg.textContent.length).trim();
+        bads.push('  ✗ [' + (pg ? pg.textContent : '?') + '] ' + full
+          + (expect ? '\n    ожидал: ' + expect : '')
+          + ((it.txt || '').trim() ? '\n    увидел: ' + it.txt.trim() : ''));
+      });
+      if (bads.length) {
+        lines.push('');
+        lines.push('[' + sec.dataset.block + '] ' + sec.querySelector('.bttl').textContent);
+        lines.push.apply(lines, bads);
+      }
+    });
+    if (bad === 0) { lines.push(''); lines.push('Провалов нет.'); }
+    return lines.join('\n');
+  }
+
+  document.getElementById('reportBtn').addEventListener('click', function () {
+    var txt = buildReport();
+    var fallback = function () { window.prompt('Скопируйте отчёт отсюда:', txt); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () {
+        var b = document.getElementById('reportBtn');
+        var old = b.textContent;
+        b.textContent = 'СКОПИРОВАНО';
+        setTimeout(function () { b.textContent = old; }, 1400);
+      }, fallback);
+    } else fallback();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    if (!confirm('Сбросить все отметки и комментарии?')) return;
+    state = { items: {} };
+    save();
+    items.forEach(function (li) {
+      var ta = li.querySelector('textarea.fail');
+      if (ta) ta.value = '';
+      applyItem(li);
+    });
+    refresh();
+  });
+
+  refresh();
+})();
+</script>
+
+</html>

@@ -339,12 +339,16 @@ body{
   display:flex;
   align-items:center;
   justify-content:flex-start;
-  gap:7px;
+  gap:6px;
+  row-gap:8px;
+  /* the row is one button away from overflowing the 560px instrument (PC
+     clip button, 2026-07-17) — wrapping beats clipping the STOP ALL guard */
+  flex-wrap:wrap;
   margin-top:12px;
 }
-.airport{ flex:0 0 auto; padding:0 16px; }
+.airport{ flex:0 0 auto; padding:0 13px; }
 .slew{
-  width:46px;
+  width:44px;
   flex:0 0 auto;
   min-height:44px;
   background:linear-gradient(#33333a,#1d1d21);
@@ -367,8 +371,8 @@ body{
 .kbd-key{ min-height:40px; font-size:12.5px; color:var(--amber); }
 .kbd-wide{ grid-column:span 6; }
 .kbd-bs{ grid-column:span 2; font-size:15px; }
-.kbdtoggle{ flex:0 0 auto; padding:0 14px; }
-.clipbtn{ flex:0 0 auto; padding:0 12px; }
+.kbdtoggle{ flex:0 0 auto; padding:0 11px; }
+.clipbtn{ flex:0 0 auto; padding:0 9px; }
 
 /* ---- STOP ALL: guarded emergency button (outside the LSK grid) ----
    Same height as a slew key, function-key width, far right of the slew row.
@@ -443,14 +447,21 @@ body{
   z-index:2;
 }
 
-/* ---- narrow / tablet portrait ---- */
-@media (max-width:600px){
+/* ---- narrow / tablet portrait ----
+   840px catches tablet portrait too (iPad mini reports 744 CSS px — the old
+   600px cutoff left it on the desktop layout: 560px instrument in a sea of
+   margin). Instrument stretches to the full width, type steps up a notch. */
+@media (max-width:840px){
   .stage{ padding:12px 6px 26px; }
   .instrument{ width:100%; border-radius:18px; padding:12px 10px 16px; }
   .core{ grid-template-columns:46px 1fr 46px; }
-  .fk{ font-size:9.5px; }
   .title-text{ font-size:18px; }
-  .lval,.rval{ font-size:20px; }
-  .funckeys,.slewrow{ gap:5px; }
+  .lhead,.rhead{ font-size:13.5px; }
+  .lval,.rval{ font-size:18px; }
   .logpanel-screen{ height:240px; }
+}
+/* phones only: tighter keys */
+@media (max-width:600px){
+  .fk{ font-size:9.5px; }
+  .funckeys,.slewrow{ gap:5px; }
 }

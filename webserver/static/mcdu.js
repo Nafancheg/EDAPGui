@@ -292,6 +292,16 @@
         flash(msg.ok ? 'CAL TARGET DONE' : 'CAL TARGET FAILED', 1800);
         render();
         break;
+      case 'clip_text': {
+        // PC CLIP reply: host clipboard -> scratchpad, same charset filter
+        // as local typing/paste
+        var pcv = scratchFilter(msg.text);
+        if (!pcv) { flash('PC CLIP EMPTY', 1200); break; }
+        if (S.flash) clearFlashNow();
+        S.scratch = pcv;
+        renderScratch();
+        break;
+      }
       default:
         break;
     }
@@ -452,6 +462,15 @@
     } else dialog();
   }
 
+  // PC CLIP button: ask the server for the HOST PC's clipboard (clip.get).
+  // CPY/PST above only reach the tablet's own clipboard; this is the bridge
+  // for "copied a system name on the PC, want it in the scratchpad". The
+  // reply lands in handle()'s 'clip_text' case.
+  function pcClip() {
+    if (!ensureConn()) return;
+    sendRaw({ cmd: 'clip.get' });
+  }
+
   function renderScratch() {
     if (S.flash) {
       spInput.value = S.flash;
@@ -562,6 +581,15 @@
     if (!ensureConn()) return;
     var nv = !S.cfg.ElwScannerEnable;
     if (sendRaw({ cmd: 'config.set', key: 'ElwScannerEnable', value: nv })) S.cfg.ElwScannerEnable = nv;
+    render();
+  }
+
+  // PROG·CRUISE L3: auto discovery-honk on arrival (jump_service gates the
+  // honk thread on this key)
+  function dssToggle() {
+    if (!ensureConn()) return;
+    var nv = !(S.cfg.DSSScanEnable !== false);
+    if (sendRaw({ cmd: 'config.set', key: 'DSSScanEnable', value: nv })) S.cfg.DSSScanEnable = nv;
     render();
   }
 
@@ -921,17 +949,30 @@
       && (snap.total_jumps === null || snap.total_jumps === undefined);
     var jc = (snap.jump_cnt === null || snap.jump_cnt === undefined) ? '-' : snap.jump_cnt;
     var tj = (snap.total_jumps === null || snap.total_jumps === undefined) ? '-' : snap.total_jumps;
-    // scans and modes (FSS/HONK/ELW/FAST TRAVEL) now live on CRU OPT (RAD NAV
-    // key); CRUISE keeps only the two in-flight actions FSD ROUTE and SCOOP NOW.
+    // in-flight scan toggles live HERE with the assist (owner request
+    // 2026-07-17: "нафига мне сканить ненужные системы"): L2 FSS = the ELW
+    // scanner pass at each star (ElwScannerEnable), L3 DSS = the auto
+    // discovery-honk on arrival (DSSScanEnable). One-shot HONK/FSS actions
+    // and FAST TRAVEL stay on CRU OPT.
     fill(0, {
       lv: fsdOn ? '<FSD ROUTE ON' : '<FSD ROUTE OFF', lvs: fsdOn ? 's-on' : 's-off',
       rh: 'JUMPS', rv: noJumps ? '---' : jc + '/' + tj, rvs: noJumps ? 's-muted' : 's-normal'
     });
     actions.L[0] = { press: fsdToggle, input: null };
 
-    fill(1, { rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted' });
+    var elwOn = !!S.cfg.ElwScannerEnable;
+    fill(1, {
+      lv: elwOn ? '<FSS SCAN ON' : '<FSS SCAN OFF', lvs: elwOn ? 's-on' : 's-off',
+      rh: 'ETA', rv: snap.eta ? String(snap.eta) : '---', rvs: snap.eta ? 's-normal' : 's-muted'
+    });
+    actions.L[1] = { press: elwToggle, input: null };
 
-    fill(2, { rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted' });
+    var dssOn = S.cfg.DSSScanEnable !== false;
+    fill(2, {
+      lv: dssOn ? '<DSS HONK ON' : '<DSS HONK OFF', lvs: dssOn ? 's-on' : 's-off',
+      rh: 'TARGET', rv: snap.target ? String(snap.target) : '---', rvs: snap.target ? 's-normal' : 's-muted'
+    });
+    actions.L[2] = { press: dssToggle, input: null };
 
     var hasDist = snap.total_dist_jumped !== null && snap.total_dist_jumped !== undefined;
     var distVal = hasDist
@@ -1579,10 +1620,13 @@
       rh: 'SYSTEM', rv: loc || '---', rvs: loc ? 's-normal' : 's-muted' });
     actions.L[0] = { press: function () { flash('NOT AVAILABLE', 1500); }, input: null };
 
-    var starVal = cur && cur.star_class
-      ? cur.star_class + ' ' + (cur.scoopable ? 'SCOOP' : '✗') : '---';
+    // star class: route entry when a game route is plotted, otherwise the
+    // journal's arrival-star class (known after the first jump this session)
+    var stCls = (cur && cur.star_class) ? cur.star_class : (S.snap.star_class || null);
+    var stScoop = (cur && cur.star_class) ? !!cur.scoopable : !!S.snap.scoopable;
+    var starVal = stCls ? stCls + ' ' + (stScoop ? 'SCOOP' : '✗') : '---';
     fill(1, { rh: 'STAR', rv: starVal,
-      rvs: (cur && cur.star_class) ? (cur.scoopable ? 's-on' : 's-alert') : 's-muted' });
+      rvs: stCls ? (stScoop ? 's-on' : 's-alert') : 's-muted' });
 
     fill(2, { rh: 'SCANS', rv: 'NO DATA', rvs: 's-muted' });
     fill(3, { rh: 'EDSM', rv: 'NO DATA', rvs: 's-muted' });
@@ -2221,8 +2265,12 @@
     }
     subR.className = 'sub-right';
     var snap = S.snap;
-    subL.textContent = 'AP: ' + (snap.ap_state || S.statusline || '---');
-    subR.textContent = 'MODE ' + String(snap.ap_mode || '---').toUpperCase();
+    // ap_mode 'offline' = no assist engaged (pilot flies by hand) — display
+    // it as MANUAL so it can't be read as a connection problem, and don't
+    // show a stale last-assist ap_state next to it
+    var manual = (snap.ap_mode || 'offline') === 'offline';
+    subL.textContent = 'AP: ' + (manual ? t('OFF') : (snap.ap_state || S.statusline || '---'));
+    subR.textContent = 'MODE ' + (manual ? t('MANUAL') : String(snap.ap_mode).toUpperCase());
   }
 
   function renderConn() {
@@ -2394,8 +2442,10 @@
 
   var cpyBtn = document.getElementById('cpyBtn');
   var pstBtn = document.getElementById('pstBtn');
+  var pcBtn = document.getElementById('pcBtn');
   if (cpyBtn) cpyBtn.addEventListener('click', copyScratch);
   if (pstBtn) pstBtn.addEventListener('click', pasteScratch);
+  if (pcBtn) pcBtn.addEventListener('click', pcClip);
 
   // ---- on-screen keypad (KBD toggle in the slew row) ----
   // Keys write through spInput + an 'input' event so the same charset filter

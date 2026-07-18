@@ -59,11 +59,62 @@ def _get_route_executor(ed_ap):
     global _route_executor
     if _route_executor is None:
         from RouteExecutor import RouteExecutor
-        _route_executor = RouteExecutor(ed_ap)
+        # real game-side driver when the core can drive keys (headless launch
+        # with a live EDKeys); anything less falls back to the recording stub
+        driver = None
+        try:
+            if getattr(ed_ap, "keys", None) is not None:
+                from GalaxyMapDriver import GameGalaxyMapDriver
+                driver = GameGalaxyMapDriver(ed_ap)
+        except Exception:
+            log.exception("GameGalaxyMapDriver unavailable — using stub")
+        _route_executor = RouteExecutor(ed_ap, driver)
     return _route_executor
 
 
 SCOOPABLE_CLASSES = {"K", "G", "B", "F", "O", "A", "M"}
+
+CF_UNICODETEXT = 13
+
+
+def _read_host_clipboard() -> str:
+    """Text from the HOST PC's clipboard (the machine running the server),
+    or "" when it is empty, holds no text, is transiently locked by another
+    app, or the platform is not Windows. ctypes only — no new dependency,
+    and nothing platform-specific runs at import time.
+
+    Backs the tablet's PC CLIP button: the browser Clipboard API can only
+    reach the TABLET's own clipboard (CPY/PST), so a system name copied on
+    the PC (Inara/Spansh/EDSM in the desktop browser) needs this server-side
+    hop to reach the scratchpad."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32          # AttributeError off Windows
+        kernel32 = ctypes.windll.kernel32
+        # default restype is a 32-bit int — must widen HANDLE/pointer returns
+        # on 64-bit Python or GlobalLock gets a truncated handle
+        user32.GetClipboardData.restype = ctypes.c_void_p
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        if not user32.OpenClipboard(None):
+            return ""
+        try:
+            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return ""
+            ptr = kernel32.GlobalLock(handle)
+            if not ptr:
+                return ""
+            try:
+                return ctypes.wstring_at(ptr)
+            finally:
+                kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        log.debug("host clipboard read failed", exc_info=True)
+        return ""
 
 
 def map_nav_route(data):
@@ -507,6 +558,13 @@ async def _dispatch_command(ed_ap, broadcaster, ws: web.WebSocketResponse, cmd: 
                 asyncio.ensure_future(_bc.broadcast({"type": "dir_state", "data": _planner.snapshot()}))
 
         fut.add_done_callback(_dir_set_done)
+    elif name == "clip.get":
+        # PC CLIP: hand the HOST clipboard's text to the requesting client
+        # only (a clipboard is not shared state — no broadcast). The client
+        # runs it through the same scratchpad filter as its own paste.
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, _read_host_clipboard)
+        await ws.send_str(json.dumps({"type": "clip_text", "text": text}))
     else:
         await ws.send_str(json.dumps({"type": "error", "text": f"unknown command: {name!r}"}))
 

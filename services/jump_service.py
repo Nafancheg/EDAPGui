@@ -172,6 +172,16 @@ class JumpService:
             return True
 
         logger.error(f'FSD Jump failed {jump_tries} times. jump=err2')
+        # Surface the likely causes to the pilot: the game refuses to even
+        # start charging when the target is out of jump range, fuel is below
+        # the jump cost, or the FSD is on cooldown — none of which are
+        # otherwise visible in the web log.
+        ship = self.ap.jn.ship_state()
+        self.ap.ap_ckb('log', (
+            f"FSD jump failed {jump_tries}x. Fuel: {ship.get('fuel_percent')}% "
+            f"({ship.get('fuel_level')}t), target: {ship.get('target')!r}, "
+            f"ship max range: {ship.get('max_jump_range')} LY. "
+            f"Check: target in range? enough fuel for the jump? FSD cooldown?"))
         raise Exception("FSD Jump failure")
 
         # a set of convience routes to pitch, rotate by specified degress
@@ -242,8 +252,10 @@ class JumpService:
                             "  Fu#: "+str(self.ap.refuel_cnt) + " ETA: "+self.ap._str_eta)
                 self.ap.ap_ckb('log', 'ETA (to System): '+self.ap._str_eta)
 
-                # Do the Discovery Scan (Honk). Skipped in Fast Travel mode.
-                if not self.ap.config.get('FastTravelMode', False):
+                # Do the Discovery Scan (Honk). Skipped in Fast Travel mode or
+                # when the pilot turned the auto-honk off (PROG·CRUISE DSS toggle).
+                if (not self.ap.config.get('FastTravelMode', False)
+                        and self.ap.config.get('DSSScanEnable', True)):
                     self.ap.honk_thread = threading.Thread(target=self.honk, daemon=True)
                     self.ap.honk_thread.start()
 

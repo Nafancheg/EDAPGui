@@ -241,24 +241,37 @@ def _resolve_fsd(loadout: dict) -> dict:
     }
 
 
-def ship_plot_params(loadout: dict, cargo: float = 0.0) -> dict:
+def ship_plot_params(loadout: dict, cargo: float = 0.0,
+                     fuel_margin: float = 0.0) -> dict:
     """Build the Spansh galaxy-plotter (generic/route) form params for a ship.
 
     `cargo` is the LIVE cargo tonnage (Status.json) — mass changes range and
     fuel burn, so a loaded ship must not be plotted as empty. See
     design/route-planner-backend.md 2.2. Raises PlotError when the loadout
     has no FSD or is missing required fields.
+
+    `fuel_margin` (t) is withheld from the plannable tank: Spansh models JUMP
+    burn only, while the game continuously drains the reserve tank in normal
+    flight/supercruise and silently tops it up from the main tank — so on a
+    tight plan the real tank runs a few tenths short of the planned
+    fuel_tank and the game refuses the jump («не хватает чуть-чуть»,
+    2026-07-17 live test). The withheld tons stay in base_mass — the real
+    ship still carries them, they just can't be planned into a leg.
     """
     r = _resolve_fsd(loadout)
-    # base_mass = hull + reserve tank (the always-present fuel), per the plotter.
-    base_mass = r["unladen_mass"] + r["internal_tank_size"]
+    margin = max(0.0, float(fuel_margin or 0.0))
+    tank = max(1.0, float(r["tank_size"]) - margin)
+    margin = float(r["tank_size"]) - tank        # actual withheld tons after clamp
+    # base_mass = hull + reserve tank (the always-present fuel), per the
+    # plotter — plus the withheld margin fuel the ship carries but won't plan.
+    base_mass = r["unladen_mass"] + r["internal_tank_size"] + margin
     return {
         "fuel_power": r["size_const"],
         "fuel_multiplier": r["class_const"] / 1000.0,
         "optimal_mass": r["optimal_mass"],
         "supercharge_multiplier": r["supercharge_multiplier"],
         "base_mass": base_mass,
-        "tank_size": r["tank_size"],
+        "tank_size": tank,
         "internal_tank_size": r["internal_tank_size"],
         "max_fuel_per_jump": r["max_fuel"],
         "range_boost": r["range_boost"],
@@ -655,6 +668,15 @@ class RoutePlanner:
             return max_range_from_loadout(loadout)
         raise PlotError("cannot determine jump range for the fast route")
 
+    def _fuel_margin(self) -> float:
+        """Plannable-tank safety margin (t) from config — covers the cruise/
+        reserve-tank burn the Spansh fuel model does not know about."""
+        try:
+            cfg = getattr(self.ap, "config", None) or {}
+            return max(0.0, float(cfg.get("RoutePlanFuelMarginT", 1.0)))
+        except (TypeError, ValueError):
+            return 1.0
+
     def _loadout(self) -> dict:
         state = self.ap.jn.ship_state()
         loadout = state.get("loadout_raw") if isinstance(state, dict) else None
@@ -723,14 +745,16 @@ class RoutePlanner:
             # AND fuel is modelled, so the route is executable segment-wise.
             loadout = self._loadout()
             route = self._spansh.plot_fuel_safe(
-                source, dest, ship_plot_params(loadout, self._live_cargo()),
+                source, dest,
+                ship_plot_params(loadout, self._live_cargo(), self._fuel_margin()),
                 supercharge=True)
             route["ship"] = ship_summary(loadout)
             return route
         if key in ("fuel_safe", "fuelsafe"):
             loadout = self._loadout()
             route = self._spansh.plot_fuel_safe(
-                source, dest, ship_plot_params(loadout, self._live_cargo()))
+                source, dest,
+                ship_plot_params(loadout, self._live_cargo(), self._fuel_margin()))
             route["ship"] = ship_summary(loadout)
             return route
         if key == "ultra":

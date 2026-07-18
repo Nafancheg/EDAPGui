@@ -210,10 +210,17 @@ class StatusParser:
             #print(f'Status.json mod timestamp {self.last_mod_time} unchanged.')
             return self.current_data
 
-        # Read file
+        # Read file — bounded retries. The file can be locked mid-write or left
+        # truncated/missing when the game exits; this method runs on the web
+        # server's 1 Hz status tick and the engine thread alike, and the old
+        # unbounded loop wedged them for minutes once the game shut down
+        # (autopilot.log 2026-07-18 01:03: 85+ retries). Give up after ~2.5 s
+        # and serve the last good data instead; last_mod_time stays untouched
+        # so the next call retries the read.
         attempt = 1
         backoff = 0.1
-        while True:
+        data = None
+        while attempt <= 6:
             if os.access(self.file_path, os.R_OK):
                 try:
                     with open(self.file_path, 'r', encoding='utf-8') as file:
@@ -221,16 +228,17 @@ class StatusParser:
                         if attempt > 2:
                             logger.debug(f'Status.json read succeeded on attempt {attempt}.')
                         break
-                except Exception as e:
+                except Exception:
                     if attempt >= 2:
                         logger.debug(f'An error occurred reading Status.json file (attempt {attempt}). File may be open.')
-                    sleep(backoff)
-                    backoff = min(backoff * 2, 1.0)
-                    attempt += 1
-            else:
-                sleep(backoff)
-                backoff = min(backoff * 2, 1.0)
-                attempt += 1
+            sleep(backoff)
+            backoff = min(backoff * 2, 1.0)
+            attempt += 1
+        if data is None:
+            logger.warning('Status.json unreadable after %d attempts — using last known data.', attempt - 1)
+            if self.current_data is not None:
+                return self.current_data
+            raise FileNotFoundError(f'Status.json unreadable: {self.file_path}')
 
         # Combine flags from Flags and Flags2 into a single dictionary
         # combined_flags = {**self.translate_flags(data['Flags'])}
